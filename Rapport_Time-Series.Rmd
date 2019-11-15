@@ -1,0 +1,417 @@
+---
+title: "Rapport - Séries Temporelles"
+output:
+  html_document:
+    df_print: paged
+---
+
+#### Nom et Prénom des étudiants du groupe :
+
+```
+- REAL : Philippe : 
+```
+
+#### Instructions
+
+* Vous rendrez un compte rendu écrit sous format HTML en faisant votre TP directement dans ce fichier R Markdown.
+* Utiliser le bouton **Knit HTML** dans RStudio pour compiler le fichier.
+* Vous écrirez vos programmes R complets dans des blocs de code et vos commentaires et explications dans des paragraphes de texte. 
+* Vous pouvez utiliser la syntaxe LaTeX pour écrire des formules mathématiques dans les parties de texte.
+* N'hésitez pas à consulter la documentation relative à RMarkdown -> bouton **?** ou sur http://rmarkdown.rstudio.com/
+* Pensez à écrire vos noms et prénoms en haut du document.
+* Vous enverrez votre fichier au plus tard le **//2015** au soir à mon adresse jonathan.el-methni@parisdescartes.fr  
+
+
+```{r eval=FALSE, message=FALSE, warning=FALSE}
+
+#for manipulate data (transform to dataframe)
+install.packages("tidyverse")
+install.packages("tibble")
+install.packages("sm")
+
+install.packages("KernSmooth")
+install.packages("np")
+install.packages("stats")
+install.packages("ggplot2")
+install.packages("kedd")
+```
+
+
+```{r} 
+install.packages("forecast")
+install.packages("TSA")
+#install.packages("aTSA")
+install.packages("tseries")
+install.packages("TTR")
+install.packages("gridExtra")
+```
+
+## Load libraries 
+```{r r_utile, echo=FALSE, message=FALSE, warning=FALSE}
+
+rm(list=ls())
+
+#chargement des librairies utilses
+library(tibble)
+library(ggplot2)
+library(KernSmooth)
+library(stats)
+library(np)
+library(kedd)
+library(tidyverse)
+
+library(forecast)
+library(TSA)
+#library(aTSA)
+library(tseries)
+library(TTR)
+library(gridExtra)
+require(graphics)
+```
+
+
+## 2ème Exemple : CAC-40
+
+#### Chargement des données
+Les données ont été récupérées sur le site Yahoo Finance
+
+https://finance.yahoo.com/quote/%5EFCHI/history?period1=879289200&period2=1573513200&interval=1d&filter=history&frequency=1d
+
+https://www.kaggle.com/kp4920/s-p-500-stock-data-time-series-analysis/code
+
+
+### 1.0 Lecture des données et premières analyses
+
+* Read Data
+```{r d1_summary}
+dataCAC40_raw <-read.table("Data_CAC40_1997-2019.csv", sep=",", dec=".",header=T, na.strings = "null")
+```
+
+* Data overview
+```{r}
+summary(dataCAC40_raw)
+
+```
+
+* Data cleaning
+The data has some missing values, which we will replace with zero. Also, 'Date' feature is listed as factor, we will convert that to 'Date' structure.
+
+```{r}
+
+dataCAC40<-dataCAC40_raw[which(dataCAC40_raw$Open != "NA"),]
+#dataCAC40<-dataCAC40_raw
+#dataCAC40[is.na(dataCAC40)] <- 0
+
+
+#nbNull<-which(dataCAC40[,2]=="null")
+FrameCAC40 <- as.data.frame(dataCAC40)
+
+FrameCAC40[['Date']] <- as.Date(FrameCAC40[['Date']], format='%Y-%m-%d')  
+#options(digits=10)
+#FrameCAC40[['Open']] <- as.double(FrameCAC40[['Open']])
+
+FrameCAC40[,2] <- as.numeric(as.character(FrameCAC40[,2]))
+FrameCAC40[,3] <- as.numeric(as.character(FrameCAC40[,3]))
+FrameCAC40[,4] <- as.numeric(as.character(FrameCAC40[,4]))
+FrameCAC40[,5] <- as.numeric(as.character(FrameCAC40[,5]))
+FrameCAC40[,6] <- as.numeric(as.character(FrameCAC40[,6]))
+
+head(FrameCAC40)
+summary(FrameCAC40)
+
+```
+
+```{r} 
+
+library(ggplot2)
+options(repr.plot.width=12, repr.plot.height=12) 
+p1 = ggplot(FrameCAC40, aes(Open)) + geom_histogram(bins = 50, aes(y = ..density..), col = "red", fill = "red", alpha = 0.3) + geom_density()# + xlim(c(0, 1000))
+p2 = ggplot(FrameCAC40, aes(Close)) + geom_histogram(bins = 50, aes(y = ..density..), col = "red", fill = "red", alpha = 0.3) + geom_density()# + xlim(c(0, 1000))
+
+#grid.arrange(p1,p2, nrow=1,ncol=2)
+grid.arrange(p1, nrow=1,ncol=1)
+```
+
+
+
+```{r fig.width=10}
+#CREATE DAILY OBJECT
+inds<-seq(as.Date("1997-11-12"	),as.Date("2019-11-12"), by ="day")
+#crate function tahatgenerate time
+create_ts <- function(col_idx){
+  i_ts<-as.numeric(FrameCAC40[,col_idx]) %>%
+    ts(start = c(1997,as.numeric(format(inds[1],"%j"))), frequency =365.5 )
+  return (i_ts)
+}
+
+i_ts = create_ts(colnames(FrameCAC40) == "Open")
+plot(i_ts,xlab="Time",ylab="Close",main="Time serie - CAC40",col="red")
+
+```
+
+```{r} 
+library(zoo)
+library(xts)
+library(lubridate)
+#○library( TStudio)
+
+xtsCAC40 <- xts(x = FrameCAC40, order.by = FrameCAC40$Date)
+
+library(readxl)
+start <- as.Date('1997-11-12')
+end <- as.Date('2019-11-12')
+tsCAC40<-ts(xtsCAC40, start=start, frequency = 365)
+#tsCAC40<-as.timeSeries.xts(dataCAC40,frequency = d,start ='1997-11-12')
+class(tsCAC40)
+
+frequency(tsCAC40)
+
+#tsCAC40_Close=ts(tsCAC40(Open),start=c(1997,11,12))
+```
+
+
+
+
+### Time Series Analysis
+
+Before we start with the time series analysis, lets go through the theory in brief.
+
+What is AutoRegressive or AR model:
+
+Autoregressive (AR) models are models where the value of variable in one period is related to the values in the previous period.
+AR(p) is a Autoregressive model with p lags.
+  
+What is Moving Average or MA model:
+
+Moving average (MA) model accounts for the possibility of a relationship between a variable and the residual from the previous period.
+MA(q) is a Moving Average model with q lags.
+
+What is ARMA model:
+Autoregressive moving average model combines both p auto regressive terms and q Moving average terms, also called ARMA(p,q)
+
+
+
+* Transfom data to time serie
+```{r fig.width=15}
+tsCAC40_Close=ts(as.vector(FrameCAC40[,5]),start=as.Date("1997-11-12"),frequency=365)
+
+plot(tsCAC40_Close,xlab="Time",ylab="Close",main="Time serie - CAC40",col="red")
+
+#monthplot(tsCAC40_Close)
+
+```
+
+
+* Transfom data to time serie
+```{r fig.width=15}
+FrameCAC40_2012 <- FrameCAC40[FrameCAC40[,1]> as.Date("2012-11-11"),]
+
+tsCAC40_2012_Close=ts(as.vector(FrameCAC40_2012[,5]),start=2012,frequency=365)
+```
+
+## Plotting Time Series - Close
+
+There are 5 time series in the data provided - (High, Low, Open, Close, Volume). We will look at the High values first.
+
+```{r fig.width=15}
+
+plot(tsCAC40_Close,xlab="Time",ylab="Close",main="Time serie - CAC40 - 1997/2019")#,col="red")
+
+plot(tsCAC40_2012_Close,xlab="Time",ylab="Close",main="Time serie - CAC40 - 2012/2019")#,col="red")
+
+#monthplot(tsCAC40_Close)
+
+```
+
+
+```{r fig.width=25}
+
+monthplot(tsCAC40_2012_Close)
+```
+
+
+### Stationarity
+What is stationary time series?
+A stationary process has a mean and variance that do not change overtime and the process does not have trend.
+The above time series does not look stationary.
+To confirm that we will use "Dickey-Fuller test" to determine stationarity. 
+  
+Dickey-Fuller test for variable
+ 
+```{r} 
+
+adf.test(as.vector(FrameCAC40[,5]),alternative="stationary",k=0)
+adf.test(as.vector(FrameCAC40_2012[,5]),alternative="stationary",k=0)
+
+```
+ 
+### Decomposing Time Series
+Decomposing a time series involves separating the time series into trend and irregular components.
+
+```{r}
+i_tscomponents <- decompose(tsCAC40_Close)
+plot(i_tscomponents)#, col = "red")
+
+i_tscomponents_2012 <- decompose(tsCAC40_2012_Close)
+plot(i_tscomponents_2012)#, col = "red")
+```
+
+
+### Differencing a Time Series
+Differencing is a common solution used to stationarize the variable.
+We will perform differencing using R function diff.
+
+
+```{r fig.width=15}
+
+i_tsdiff<-diff(tsCAC40_Close,differences = 1)
+plot(i_tsdiff)#,col="red")
+
+i_tsdiff_2012<-diff(tsCAC40_2012_Close,differences = 1)
+plot(i_tsdiff_2012)#,col="red")
+
+```
+
+The time series (above) appears to be stationary.
+
+
+
+## Selecting a Candidate ARIMA Model
+The next step is to select appropriate ARIMA model, which means finding the most appropriate values of p and q for an ARIMA(p,d,q) model. You usually need to examine the correlogram and partial correlogram of the stationary time series for this.
+To plot a correlogram and partial correlogram, we can use the acf() and pacf() functions in R, respectively.
+
+```{r}
+acf(i_tsdiff, lag.max=60)             # plot a correlogram
+acf(i_tsdiff, lag.max=60, plot=FALSE) # get the autocorrelation values
+
+```
+```{r}
+
+pacf(i_tsdiff, lag.max=60)             # plot a partial correlogram
+pacf(i_tsdiff, lag.max=60, plot=FALSE) # get the partial autocorrelation values
+
+```
+
+
+```{r}
+
+acf(i_tsdiff_2012, lag.max=60)             # plot a correlogram
+acf(i_tsdiff_2012, lag.max=60, plot=FALSE) # get the autocorrelation values
+```
+
+```{r}
+
+pacf(i_tsdiff_2012, lag.max=60)             # plot a partial correlogram
+pacf(i_tsdiff_2012, lag.max=60, plot=FALSE) # get the partial autocorrelation values
+
+```
+
+Now, we could compare the sample ACF and PACF to those of various theoretical ARMA models. Use properties of ACF & PACF as a guide to estimate plausible models and select appropriate p, q and d. Alternative to this is discussed next.
+
+## Fitting an ARIMA Model
+  R provides a function auto.arima, which returns best ARIMA model according to either AIC, AICc or BIC value. The function conducts a search over possible model within the order constraints provided.
+  
+```{r}
+i_tsarima <- auto.arima(tsCAC40_Close, max.p = 3, max.q = 3, max.d = 3)
+i_tsarima
+```
+
+```{r}
+i_tsarima_2012 <- auto.arima(tsCAC40_2012_Close, max.p = 3, max.q = 3, max.d = 3)
+i_tsarima_2012
+```
+
+
+## Forecasting using an ARIMA Model
+```{r}
+help("forecast")
+
+i_tsforecasts <- forecast(i_tsarima, h = 60)
+plot(i_tsforecasts, col = "red")
+```
+
+```{r}
+plot.ts(i_tsforecasts$residuals)            # make time plot of forecast errors
+ggplot(data.frame(residuals = i_tsforecasts$residuals), aes(residuals)) + geom_histogram(bins = 50, aes(y = ..density..), col = "red", fill = "red", alpha = 0.3) + geom_density()# make a histogram
+```
+
+The forecast errors seem to be normally distributed with mean zero and constant variance, the ARIMA model does seem to provide an adequate predictive model
+
+
+Here we looked at how to best fit ARIMA model to univariate time series.
+Next thing that I'll work on is Multivariate Time Series Forecasting using neural net.
+
+
+
+```{r fig.width=15}
+
+
+
+```
+
+#### 1. Vous pouvez mettre en avant votre texte de différentes façons
+
+*"Essentially, all models are wrong, but some are useful" G.Box*
+
+**"Essentially, all models are wrong, but some are useful" G.Box**
+
+> "Essentially, all models are wrong, but some are useful" G.Box
+
+```
+"Essentially, all models are wrong, but some are useful" G.Box
+```
+
+Trait horizontal de délimitation 
+
+**********
+
+Différentes tailles avec #
+
+# Test
+## Test
+### Test
+#### Test
+
+#### 2. Vous pouvez écrire vos codes R. Les résultats s'afficheront à la suite.
+ 
+```{r} 
+# Exemple :
+data(anscombe)
+names(anscombe)
+attach(anscombe)
+modele=lm(y1~x1)
+modele
+summary(modele)
+```
+
+#### 3. Vous pouvez afficher vos sorties graphique
+
+```{r,} 
+plot(x1,y1,xlab="Legend x", ylab="Legend y", main="Titre", pch=19)
+abline(modele,col=1)
+```
+
+#### 4. Vous pouvez écrire des équations mathématiques
+
+$$
+\forall i=1,\dots,n\quad Y_i = \beta + \alpha_1,x_{i,1} + \alpha_2,x_{i,2} +  
++ \alpha_3,x_{i,3} + \alpha_4,x_{i,4} + \alpha_5,x_{i,5} + \alpha_6,x_{i,6} +
++ \alpha_7,x_{i,7} + \alpha_8,x_{i,8} +
+\varepsilon_i
+$$
+
+où
+
++ $\alpha_1, \ldots, \alpha_{p}$ et $\beta$ sont les paramètres d'espérance du modèle.
++ $\varepsilon_i$ sont les erreurs résiduelles aléatoires supposées iid de loi ${\cal N}(0,\sigma^2)$.
++ $\sigma^2$ est le paramètre de variance.
+
+#### 5. Vous pouvez également faire des tableaux 
+
+Critère | Type de selection | Variables explicatives | $R^2$ | $R^2_{ajus}$ | 
+------- | ----------------- | ---------------------- | ----- | ------------ |
+AIC     | Descendante       | $x_1,x_3,x_5$          | 0.67  | 0.54         |
+BIC     | Ascendante        | $x_1,x_5$              | 0.61  | 0.49         |
+
+
+
