@@ -1,0 +1,366 @@
+---
+title: "Rapport - Séries Temporelles"
+author: "Philippe Real"
+date: "12/01/2020"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+  word_document:
+    toc: yes
+  html_document:
+    df_print: paged
+    toc: yes
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# Librairies
+library(tibble)
+library(ggplot2)
+library(KernSmooth)
+library(stats)
+library(np)
+library(kedd)
+library(tidyverse)
+library(caschrono)
+library(brms)
+#library(its)
+library(forecast)
+library(TSA)
+#library(aTSA)
+library(tseries)
+library(TTR)
+library(gridExtra)
+require(graphics)
+
+```
+
+
+## Lecture des données et premières analyses de la série temporelle
+
+### Lecture des données
+
+```{r echo=FALSE}
+sncf=read.table("http://freakonometrics.free.fr/sncf.csv",header=TRUE,sep=";")
+train=as.vector(t(as.matrix(sncf[,2:13])))
+Traffic_SNCF=ts(train,start = c(1963, 1), frequency = 12)
+```
+
+```{r echo=FALSE}
+head(Traffic_SNCF,500)
+```
+
+```{r echo=FALSE}
+summary(Traffic_SNCF)
+```
+
+### Chronogramme de la séries temporelles - sncf
+
+On a 4 séries temporelles possibles en fonction du choix de la quantité observée (High, Low, Open, Close, Volume).
+On va s'intéresser à la valeur à la fermeture pour la cotation de l'indice CAC40 (Close).
+
+```{r echo=FALSE}
+#par(mfrow=c(2,2))
+plot(Traffic_SNCF, xlab="Années",ylab="Nombre de voyageurs",main="Traffic sncf - 1963 à 1980")
+```
+
+### Représentations graphiques : month-plot et lag-plot
+
+Un lag-plot ou diagramme retarde est le diagramme de dispersion des points ayant pour abscisse la série retardée de k instants et pour ordonnée la série non retardée.Si le diagramme retardée suggére une corrélation entre les deux séries, on dit que la série présente une autocorrélation d'ordre k.Ce diagramme permet de comprendre la dépendance de la série par rapport à son passée. Il donne une vision locale de la série, si y a une corrélation entre la série a un instant et la série 1, 2... instants avant.
+
+```{r echo=FALSE, fig.height=4, fig.width=7}
+monthplot(Traffic_SNCF)
+```
+
+Les tracés du chronogramme et du diagramme par mois montrent un motif saisonnier global avec une tendance à l'augmentation du nombre du traffic en juillet août ainsi que décembre.
+
+```{r echo=FALSE, fig.height=4, fig.width=7}
+lag.plot(Traffic_SNCF,lags=12,layout=c(3,4),do.lines=FALSE)
+```
+
+Le lag plot indique une saisonnalité de 1 an marquée.
+
+
+Pour évaluer la performance de prédiction, nous allons estimer les paramètres du modèle
+sur la série allant de janvier 1973 jusqu'à décembre 1977 et garder les observations de
+l'année 1978 pour les comparer avec les prévisions.
+
+
+
+```{r echo=FALSE}
+Traffic_SNCF.6379 <- window(Traffic_SNCF,start=1963,end=c(1979,12))
+
+```
+
+
+
+
+## Lissage exponentiel 
+
+
+```{r echo=FALSE}
+
+
+```
+
+
+```{r echo=FALSE}
+
+
+```
+
+
+
+### Procédure automatique - modèles ajustés par ets.
+
+
+```{r echo=FALSE}
+
+fit.ets <- ets(Traffic_SNCF.6379)
+```
+
+### Prédiction
+```{r echo=FALSE}
+predfit.ets <- forecast(fit.ets,h=12)
+plot(predfit.ets)
+points(Traffic_SNCF.6379,type='l',col='darkgreen',lwd=1)
+legend('top',c("Valeurs observées","Prédictions"),col=c("darkgreen","blue"),lty=rep(1,2),lwd = rep(2,2))
+
+```
+
+### Modèle retenu - Conclusion
+```{r echo=FALSE}
+
+
+```
+
+## Modélisation
+On cherche ici à modéliser la série par un processus stationnaire ARMA(p,q) ou bien SARMA(p,q).
+Si besoin on cherchera à stationnariser la série en utilisant l'opérateur de différentiation. 
+On obtiendra alors une modélisation à partir de processus ARIMA (p,d,q) ou SARIMA(p,d,q)
+
+* Decomposition des séries temporelles
+Ici on va décomposer la série temporelles en utilisant la fonction décompose de R de façon à avoir une idée générale de la tendance (trend) saisonalité et bruit.
+
+```{r echo=FALSE}
+decompose_sncf <- decompose(Traffic_SNCF)
+plot(decompose_sncf)#, col = "red")
+```
+
+La tendance est nette, on a aussi une saisonnalité qui semble marquée. Par contre le bruit présente une structure.
+La modélisation doit être améliorée.
+
+### Identification du modèle
+La première étape est l'étude de la stationnarité du processus régissant la série. 
+Pour identifier le modèle on commence par une étude de la stationarité en traçant le corrélogramme de la série.
+
+* Corrélogramme difference=1
+
+```{r echo=FALSE, fig.height=4, fig.width=15}
+par(mfrow=c(1,2))
+#acf(Traffic_SNCF.6379,type ="covariance",lag.max=60)
+acf(Traffic_SNCF.6379,type ="correlation",lag.max=60)
+acf(diff(Traffic_SNCF.6379,difference=1), lag.max=60) 
+
+```
+
+La fonction d'autocorrélation estimée est positive. On remarque une périodicité de 1 (12 mois) (graphique de gauche).  
+On peut essayer de différentier la série au moins une fois (graphique de droite).
+
+* Corrélogramme lag=12
+
+```{r echo=FALSE, fig.height=5, fig.width=10}
+#par(mfrow=c(1,2))
+acf(diff(Traffic_SNCF.6379,lag=12,difference=1), lag.max=180) 
+```
+Le corrélogramme de la série obtenue par différentiation ne présente plus de fortes amplitudes pour les petites valeurs de h.
+Ni pour h multiple de 12 comme c'était le cas pour la série brute.
+On peut considérer que la série ainsi transformé est issue d'un processus stationnaire.
+
+On regarder l'autocorrélation partielle pour avoir une idée du terme degrès q du terme moyenne mobile MA(q) du modèle. 
+
+```{r echo=FALSE, fig.height=5, fig.width=10}
+#par(mfrow=c(1,2))
+pacf(diff(Traffic_SNCF.6379,lag=12,difference=1), lag.max=180) 
+```
+
+On obtient ainsi un modèle du type SARIMA(0,1,1)(0,1,1)
+
+* Elimination de la tendance
+
+```{r echo=FALSE, fig.height=5, fig.width=15}
+par(mfrow=c(1,2))
+
+diff_sncf<-diff(Traffic_SNCF.6379,lag=12,differences = 1)
+plot(Traffic_SNCF.6379,main="Série diff - lag=12 et differences = 1")
+trend.diff_sncf<-diff(diff(Traffic_SNCF.6379,lag=12,difference=1),lag=1,difference=1)
+plot(trend.diff_sncf,col="blue",main="Avec élimination de la tendance")
+```
+
+### Validation du modèle obtenu par différentiation et désaisonnalisation
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+adf.test(diff(Traffic_SNCF.6379,lag=12,difference=1))
+tdf<-adf.test(diff(diff(Traffic_SNCF.6379,lag=12,difference=1),lag=1,difference=1))
+```
+On confirme cette hypothèse à l'aide d'un test de $Dickey-Fuller$ on p_value=`r tdf$p.value`.
+
+```{r echo=FALSE, warning=FALSE}
+adf.test(diff(diff(Traffic_SNCF.6379,lag=12,difference=1),lag=1,difference=1))
+```
+
+* Test du Portmanteau ou test de blancheur sur R
+
+```{r echo=FALSE}
+Box.test(diff(diff(Traffic_SNCF.6379,lag=12,difference=1),lag=1,difference=1),lag=20,type="Box-Pierce")
+
+```
+
+### Estimation du modèle
+On va estimer le modèle SARIMA(0,1,1)(0,1,1) obtenu à la section précédente en utilisant la fonction Arima de R.
+
+```{r echo=FALSE}
+
+```
+
+```{r echo=FALSE}
+
+
+```
+
+### Validation du modèle SARIMA obtenu
+
+```{r echo=FALSE}
+
+```
+
+
+```{r echo=FALSE}
+
+
+```
+
+## Modélisation automatique avec R
+
+On estime le modèle de manière automatique en utilsant la fonction $auto.arima$ de R.
+
+```{r echo=FALSE}
+
+m_sncfSARIMA<-auto.arima(Traffic_SNCF.6379)
+m_sncfSARIMA
+```
+
+
+```{r echo=FALSE}
+t_stat(m_sncfSARIMA)
+```
+
+
+```{r echo=FALSE}
+cor.arma(m_sncfSARIMA)
+```
+
+
+```{r echo=FALSE}
+Box.test(m_sncfSARIMA$residuals,lag=20)
+```
+```{r echo=FALSE, fig.height=4, fig.width=12}
+par(mfrow=c(1,2))
+acf(m_sncfSARIMA$residuals,lag=120)
+pacf(m_sncfSARIMA$residuals,lag=120)
+```
+
+```{r echo=FALSE}
+plot(m_sncfSARIMA$residuals, col="blue")
+```
+
+### Prévisions
+
+```{r echo=FALSE}
+predSARIMA=forecast(m_sncfSARIMA,12)
+```
+
+```{r echo=FALSE}
+
+predSARIMA
+```
+
+```{r echo=FALSE}
+plot(predSARIMA)
+points(Traffic_SNCF,type="l",col="darkgreen",lwd=1)
+legend('top',c("Valeurs observées","Prédictions"), col=c("darkgreen","blue"),lty=rep(1,2),lwd = rep(2,2))
+
+```
+
+* Comparaison entre SARIMA et lissage exponentiel
+
+```{r echo=FALSE}
+fitHW=ets(Traffic_SNCF.6379,model="MMM")
+predHW=forecast(fitHW,h=12)
+```
+
+```{r echo=FALSE}
+plot(Traffic_SNCF,col="darkgreen",lwd=1,ylab="Nombre de Passagers",xlab="Temps", xlim=c(1978,1982),ylim=range(c(Traffic_SNCF,predSARIMA$lower,predSARIMA$upper,predHW$lower,predHW$upper)))
+points(predSARIMA$mean,col="red",lwd=2,type='l')
+points(predSARIMA$lower[,2],col="red",type='l',lty=2)
+points(predSARIMA$upper[,2],col="red",type='l',lty=2)
+points(predHW$mean,col="blue",lwd=2,type='l')
+points(predHW$lower[,2],col="blue",type='l',lty=3)
+points(predHW$upper[,2],col="blue",type='l',lty=3)
+legend("topleft",c("Vraies valeurs","SARIMA","Liss.exp."),col=c("darkgreen","red","blue"),lty=c(rep(1,3),2),lwd=c(rep(2,3),1),cex=0.7)
+```
+
+* Stabilisation de la variance
+On va atténuer la variance en passant au log
+
+```{r echo=FALSE}
+m_LogSncfSARIMA=auto.arima(log(Traffic_SNCF.6379))
+
+```
+
+```{r echo=FALSE}
+t_stat(m_LogSncfSARIMA)
+```
+
+```{r echo=FALSE}
+cor.arma(m_LogSncfSARIMA)
+```
+
+```{r echo=FALSE}
+Box.test(m_LogSncfSARIMA$residuals,lag=20)
+
+```
+
+
+```{r echo=FALSE}
+
+
+```
+
+```{r echo=FALSE}
+
+
+```
+
+```{r echo=FALSE}
+predLogSARIMA=forecast(m_LogSncfSARIMA,12)
+plot(Traffic_SNCF,col="darkgreen",lwd=2,ylab="Nombre de Passagers",xlab="Temps",
+ xlim=c(1978,1982),ylim=c(2500,4500))
+points(predSARIMA$mean,col="red",lwd=2,type='l')
+points(exp(predLogSARIMA$mean),col="black",type='l',lwd=2)
+points(predHW$mean,col="blue",lwd=2,type='l')
+legend("topleft",c("Vraies valeurs","SARIMA","Liss. exp.","LogSARIMA"),col=c("darkgreen","red","blue","black"),lty=c(rep(1,4)),lwd=c(rep(2,4)),cex=0.7)
+
+```
+
+```{r echo=FALSE}
+
+
+```
+
+```{r echo=FALSE}
+
+
+```

@@ -1,0 +1,1268 @@
+---
+title: "Rapport - Séries Temporelles"
+author: "Philippe Real"
+date: "12/01/2020"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+    number_sections: true
+  word_document:
+    toc: yes
+  html_document:
+    df_print: paged
+    toc: yes
+---
+
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+
+#for manipulate data (transform to dataframe)
+install.packages("tidyverse")
+install.packages("tibble")
+install.packages("sm")
+install.packages("KernSmooth")
+install.packages("np")
+install.packages("stats")
+install.packages("ggplot2")
+install.packages("kedd")
+install.packages("caschrono")
+install.packages("brms")
+#install.packages("its") à installer manuellement
+install.packages("forecast")
+install.packages("TSA")
+#install.packages("aTSA")
+install.packages("tseries")
+install.packages("TTR")
+install.packages("gridExtra")
+```
+
+```{r r_utile, message=FALSE, warning=FALSE, include=FALSE}
+## Load libraries 
+rm(list=ls())
+
+#chargement des librairies utilses
+library(tibble)
+library(ggplot2)
+library(KernSmooth)
+library(stats)
+library(np)
+library(kedd)
+library(tidyverse)
+library(caschrono)
+library(brms)
+#library(its)
+library(forecast)
+library(TSA)
+#library(aTSA)
+library(tseries)
+library(TTR)
+library(gridExtra)
+require(graphics)
+# Introduction
+```
+
+
+\pagebreak
+
+# Partie I - Exemple de modélisation appliqué au traffic voyageur
+
+## Lecture des données et premières analyses de la série temporelle
+
+### Lecture des données
+
+```{r echo=FALSE}
+sncf=read.table("http://freakonometrics.free.fr/sncf.csv",header=TRUE,sep=";")
+train=as.vector(t(as.matrix(sncf[,2:13])))
+Traffic_SNCF=ts(train,start = c(1963, 1), frequency = 12)
+```
+
+```{r echo=FALSE}
+head(Traffic_SNCF,24)
+```
+
+```{r echo=FALSE}
+summary(Traffic_SNCF)
+```
+
+### Chronogramme de la séries temporelles - sncf
+
+On a 4 séries temporelles possibles en fonction du choix de la quantité observée (High, Low, Open, Close, Volume).
+On va s'intéresser à la valeur à la fermeture pour la cotation de l'indice CAC40 (Close).
+
+```{r echo=FALSE}
+#par(mfrow=c(2,2))
+plot(Traffic_SNCF, xlab="Années",ylab="Nombre de voyageurs",main="Traffic sncf - 1963 à 1980")
+```
+
+
+### Représentations graphiques : month-plot et lag-plot
+Si le diagramme retardée suggére une corrélation entre les deux séries, on dit que la série présente une autocorrélation d'ordre k.Ce diagramme permet de comprendre la dépendance de la série par rapport à son passée. Il donne une vision locale de la série, si y a une corrélation entre la série a un instant et la série 1, 2... instants avant.
+
+```{r echo=FALSE, fig.height=4, fig.width=7}
+monthplot(Traffic_SNCF)
+```
+
+Les tracés du chronogramme et du diagramme par mois montrent un motif saisonnier global avec une tendance à l'augmentation du nombre du traffic en juillet août ainsi que décembre.
+
+```{r echo=FALSE, fig.height=4, fig.width=7}
+lag.plot(Traffic_SNCF,lags=12,layout=c(3,4),do.lines=FALSE)
+```
+
+Le lag plot indique une saisonnalité de 1 an marquée.
+
+### Tendance et saisonnalité
+
+* Estimation de la tendance par moindre carré ordinaire
+La tendance obtenu est une droite, la droite de régression par mco.
+```{r echo=FALSE}
+lm1 <- lm(Traffic_SNCF~time(Traffic_SNCF))
+lm1
+#summary(lm1)
+```
+```{r echo=FALSE, fig.height=6, fig.width=15}
+par(mfrow=c(1,2))
+plot(Traffic_SNCF ,xlab='Année',ylab='Traffic voyageurs')
+abline(lm1,col=2)
+plot(as.vector(time(Traffic_SNCF)),lm1$residuals,xlab='Année',ylab='Résidu du modèle',pch=1)
+```
+
+* Estimation de la tendance par moyennes mobiles
+On a remarqué une saisonnalité de 12 mois (1 an) on efffectue ici une moyenne mobile d'ordre 12 pour obtenir lma tendance.
+
+```{r echo=FALSE, fig.height=5, fig.width=14}
+require(forecast)
+trend_sncf=ma(Traffic_SNCF,order=12,centre = T)
+par(mfrow=c(1,2))
+#plot(as.ts(trend_sncf),ylim=c(1500,4000),col="red")
+plot(Traffic_SNCF,xlab='Année')
+points(trend_sncf,col="red",type='l')
+#plot(Traffic_SNCF-MovingAverage,xlab="Année",pch=3,type="p")
+
+```
+\pagebreak
+
+* Série décomposé : sans la tendance, sans la saisonnalité
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+par(mfrow=c(2,2))
+detrend_sncf = Traffic_SNCF - trend_sncf
+plot(as.ts(detrend_sncf), main="Série sans la tendance")
+plot(as.ts(trend_sncf),ylim=c(1500,4000),col="red")
+
+m_sncf = t(matrix(data = detrend_sncf, nrow = 12))
+seasonal_sncf = colMeans(m_sncf, na.rm = T)
+plot(as.ts(rep(seasonal_sncf,12)), main="Série sans la saisonnalité")
+#par(mfrow=c(2,1))
+random_sncf = Traffic_SNCF - trend_sncf - seasonal_sncf
+plot(as.ts(random_sncf), main="Le bruit restant")
+```
+
+* Decomposition des séries temporelles
+Ici on va décomposer la série temporelles en utilisant la fonction décompose de R de façon à avoir une idée générale de la tendance (trend) saisonalité et bruit.
+```{r echo=FALSE}
+decompose_sncf <- decompose(Traffic_SNCF)
+plot(decompose_sncf)#, col = "red")
+
+```
+
+
+La tendance est nette, on a aussi une saisonnalité qui semble marquée. Par contre le bruit présente une structure.
+La modélisation doit être améliorée.
+
+La fonction decompose en  modèle multiplicatif n'apporte pas d'amélioration au niveau de la distribution des résidus, qui semble tojours dépendre du temps.
+
+
+* Reconstitution de la série
+
+```{r echo=FALSE, fig.height=5, fig.width=14}
+par(mfrow=c(1,2))
+recomposed_sncf = trend_sncf+seasonal_sncf+random_sncf
+plot(as.ts(recomposed_sncf), xlab="Années",ylab="Nombre de voyageurs",main="Graphique 1 - Reconstitution de la série avec modèle additif",)
+points(Traffic_SNCF, col="blue")#,type='l')
+
+
+plot(Traffic_SNCF,xlab='Temps',ylab="Evolution du traffic voyageurs",main='Graphique 2 - decompose() avec modèle additif')
+points(decompose_sncf$trend,type='l',col=2)
+points(decompose_sncf$trend+decompose_sncf$seasonal,type='l',col='purple')
+legend('topright',c(expression(X[t]),expression(m[t]),expression(m[t]+s[t])),
+col=c(1,2,'purple'),lty=1)
+```
+
+```{r echo=FALSE}
+
+
+```
+
+Pour évaluer la performance de prédiction, nous allons estimer les paramètres du modèle
+sur la série allant de janvier 1973 jusqu'à décembre 1977 et garder les observations de
+l'année 1978 pour les comparer avec les prévisions.
+
+```{r echo=FALSE}
+Traffic_SNCF.6379 <- window(Traffic_SNCF,start=1963,end=c(1979,12))
+```
+
+* Reconnaitre le bon modèle - Méthode de la bande p77
+
+
+## Prévision par lissage exponentiel 
+
+### Lissage exponentiel simple
+La première lettre A de model="ANN" signifie que l'erreur est additive, 
+La deuxième lettre concerne la tendance, N indique qu'il n'y en a pas, 
+La troisième lettre concerne la saisonnalitée, N indique qu'il n'y en a pas.
+
+```{r echo=FALSE}
+fitLES = ets(Traffic_SNCF.6379,model="ANN")
+summary(fitLES)
+predLES = forecast(fitLES,h=12)
+plot(predLES)
+points(Traffic_SNCF,type='l',col='darkgreen',lwd=2)
+legend('top',c("Valeurs observées","Prédictions"), col=c("darkgreen","blue"), lty=rep(1,2),lwd = rep(2,2))
+```
+Nous remarquons que le modele est trop basique dans notre cas pour predire a l'horizon
+12 et que l'intervalle de conance a 80%, bien que tres large, ne contient pas toutes les
+vraies valeurs de la serie. On peut utilser predict(fitLES,12) prediction a horizon 1 an.
+
+
+### Lissage exponentiel double
+```{r echo=FALSE}
+fitLED <- ets(Traffic_SNCF.6379,model="AAN")
+summary(fitLED)
+```
+
+```{r echo=FALSE}
+predLED <- forecast(fitLED,h=12)
+plot(predLED)
+points(Traffic_SNCF,type='l',col='darkgreen',lwd=2)
+legend('top',c("Valeurs observees","Predictions"),col=c("darkgreen","blue"),lty=rep(1,2),lwd = rep(2,2))
+```
+Pas vraiment d'amélioration. AIC et BIC sont plus grand.
+
+
+### Méthode de Holt-Winters - Lissage exponentiel triple
+```{r echo=FALSE}
+fitHW <- ets(Traffic_SNCF.6379,model="AAA")
+summary(fitHW)
+
+predHW <- forecast(fitHW,h=12)
+plot(predHW)
+points(Traffic_SNCF,type='l',col='darkgreen',lwd=2)
+legend('top',c("Valeurs observees","Predictions"),col=c("darkgreen","blue"),lty=rep(1,2),lwd = rep(2,2))
+```
+
+### Autres méthodes
+
+
+### Procédure automatique - modèles ajustés par ets.
+
+```{r echo=FALSE}
+fit.ets <- ets(Traffic_SNCF.6379)
+#fitAIC <- ets(Traffic_SNCF.6379,ic="aic")
+
+#summary(fit.ets)
+#summary(fitAIC)
+```
+
+Le modèle sélectionné est le modèle avec tendance additive et avec erreur et saisonnalité multiplicatives (M,A,M). C'est aussi ce modèle qui minimise le critère AIC, AICc et BIC. En effet, en spécifiant le critère à minimiser: AIC, AICc et BIC avec le paramètre ic="aic"/"aicc" ou bic" de la fonction ets, on obtient toujours le même modèle.
+
+   AIC   |      AICc    |    BIC       | 
+-------- | ------------ | ------------ |  
+3059.861 |    3063.152  |   3116.269   | 
+
+
+### Prédiction à partir du modèle de lissage exponentiel obtenu : (M,A,M)
+```{r echo=FALSE}
+predfit.ets <- forecast(fit.ets,h=12)
+plot(predfit.ets)
+points(Traffic_SNCF.6379,type='l',col='darkgreen',lwd=1)
+legend('top',c("Valeurs observées","Prédictions"),col=c("darkgreen","blue"),lty=rep(1,2),lwd = rep(2,2))
+```
+
+## Modélisation
+On cherche ici à modéliser la série par un processus stationnaire ARMA(p,q) ou bien SARMA(p,q).
+Si besoin on cherchera à stationnariser la série en utilisant l'opérateur de différentiation. 
+On obtiendra alors une modélisation à partir de processus ARIMA (p,d,q) ou SARIMA(p,d,q)
+
+### Identification du modèle
+La première étape est l'étude de la stationnarité du processus régissant la série. 
+Pour identifier le modèle on commence par une étude de la stationarité en traçant le corrélogramme de la série.
+
+la valeur de $\rho_X(h)$ varie, mais est positive et (presque) maximale en correspondance avec certaines valeurs de h. 
+Si par exemple on observe une périodicité annuelle, lorsque h = 12 dans le cas des données mensuelles, alors qu'elle est plus faible ou négative pour les autres valeurs de h. Cela signie que les valeurs d'un instant donnée ou de la période de l'année sont fortement corrélées à celles des mêmes instants ou pèriodes des années précédentes, de sorte que le phénomène varie au cours de chaque année et de manière similaire d'une année à l'autre.
+
+\pagebreak
+
+* Corrélogramme de  $X_t$ et de $(1-B)X_t$
+
+```{r echo=FALSE, fig.height=4, fig.width=15}
+par(mfrow=c(1,2))
+#acf(Traffic_SNCF.6379,type ="covariance",lag.max=60)
+acf(Traffic_SNCF.6379,type ="correlation",lag.max=60)
+acf(diff(Traffic_SNCF.6379,difference=1), lag.max=60) 
+
+```
+
+La fonction d'autocorrélation estimée est positive. On remarque une périodicité de 1 (12 mois) (graphique de gauche).  
+On peut essayer de différentier la série au moins une fois (graphique de droite).
+On remarque des autocorrélations importantes pour les valeurs de h de 1 période (année), tout les 12 mois.
+C'est aussi ce que l'on avait remarqué précedemment avec le lag plot.
+
+On va donc appliquer l'opérateur $(1-B^{12})$ à la série précédente, transformée par diffrentiation :  $(1-B)X_t)$
+
+* Corrélogramme de $(1-B^{12})$
+
+```{r echo=FALSE, fig.height=5, fig.width=10}
+#par(mfrow=c(1,2))
+acf(diff(Traffic_SNCF.6379,lag=12,difference=1), lag.max=180) 
+```
+Le corrélogramme de la série obtenue par différentiation: $(1-B)(1-B^{12})X_t)$ ne présente plus de fortes amplitudes pour les petites valeurs de h.
+Ni pour h multiple de 12 comme c'était le cas pour la série brute.
+On peut considérer que la série ainsi transformé est issue d'un processus stationnaire.
+Il y a encore cependant encore d'assez fortes valeurs pour $\hat{\rho}(1)$ ce qui indique d'ajouter un terme dans la partie MA du modèle.
+
+On regarder l'autocorrélation partielle pour avoir une idée du terme degrès q du terme moyenne mobile MA(q) du modèle. 
+
+```{r echo=FALSE, fig.height=5, fig.width=10}
+#par(mfrow=c(1,2))
+pacf(diff(Traffic_SNCF.6379,lag=12,difference=1), lag.max=180) 
+```
+
+L'autocorrélation partielle suggère un terme d'ordre q=1 (12ème mois) soit un terme moyenne mobile du type : $(1-\theta_1 B)(1-\theta_2 B^{12})\epsilon_t)$ 
+
+On obtient ainsi un modèle du type SARIMA(0,1,1)(0,1,1)
+
+$(1-B)(1-B^{12})X_t = (1-\theta_1 B)(1-\theta_2 B^{12})\epsilon_t)$ où $E\epsilon_t=0$ et $V\epsilon_t=\sigma^2$
+
+
+* Elimination de la tendance
+
+```{r echo=FALSE, fig.height=5, fig.width=15}
+par(mfrow=c(1,2))
+diff_sncf<-diff(Traffic_SNCF.6379,lag=12,differences = 1)
+
+plot(Traffic_SNCF.6379,main="Différentiation saisonnière - lag=12 et differences = 1")
+
+trend.diff_sncf<-diff(diff(Traffic_SNCF.6379,lag=12,difference=1),lag=1,difference=1)
+plot(trend.diff_sncf,col="blue",main="Avec élimination de la tendance")
+```
+
+* Validation du modèle obtenu par différentiation saisonnière et élimination de la tendance
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+tdf1<-adf.test(diff(Traffic_SNCF.6379,lag=12,difference=1))
+tdf2<-adf.test(diff(diff(Traffic_SNCF.6379,lag=12,difference=1),lag=1,difference=1))
+```
+On confirme cette hypothèse à l'aide d'un test de $Dickey-Fuller$ on obtient une p_value=`r tdf2$p.value`
+
+```{r echo=FALSE}
+box<-Box.test(diff(diff(Traffic_SNCF.6379,lag=12,difference=1),lag=1,difference=1),lag=20,type="Box-Pierce")
+```
+
+Et le test du Portmanteau ou test de blancheur sur R est lui aussi concluant et donne une p_value=`r box$p.value`
+
+```{r echo=FALSE}
+m_trend.season<-diff(diff(Traffic_SNCF.6379,lag=12,difference=1),lag=1,difference=1)
+
+s010_011=Arima(m_trend.season,order=c(0,1,0), seasonal=c(0,1,1))
+s010_010=Arima(m_trend.season,order=c(0,1,0), seasonal=c(0,1,0))
+s010_110=Arima(m_trend.season,order=c(0,1,0), seasonal=c(1,1,0))
+s010_111=Arima(m_trend.season,order=c(0,1,0), seasonal=c(1,1,1))
+
+s011_011=Arima(m_trend.season,order=c(0,1,1), seasonal=c(0,0,1))
+s011_010=Arima(m_trend.season,order=c(0,1,1), seasonal=c(0,1,0))
+s011_110=Arima(m_trend.season,order=c(0,1,1), seasonal=c(1,1,0))
+s011_111=Arima(m_trend.season,order=c(0,1,1), seasonal=c(1,1,1))
+
+s110_011=Arima(m_trend.season,order=c(1,1,0), seasonal=c(0,1,1))
+s110_010=Arima(m_trend.season,order=c(1,1,0), seasonal=c(0,1,0))
+s110_110=Arima(m_trend.season,order=c(1,1,0), seasonal=c(1,1,0))
+s110_111=Arima(m_trend.season,order=c(1,1,0), seasonal=c(1,1,1))
+
+s111_011=Arima(m_trend.season,order=c(1,1,1), seasonal=c(0,1,1))
+s111_010=Arima(m_trend.season,order=c(1,1,1), seasonal=c(0,1,0))
+s111_110=Arima(m_trend.season,order=c(1,1,1), seasonal=c(1,1,0))
+s111_111=Arima(m_trend.season,order=c(1,1,1), seasonal=c(1,1,1))
+
+s112_011=Arima(m_trend.season,order=c(1,1,2), seasonal=c(0,1,1))
+s112_010=Arima(m_trend.season,order=c(1,1,2), seasonal=c(0,1,0))
+s112_110=Arima(m_trend.season,order=c(1,1,2), seasonal=c(1,1,0))
+s112_111=Arima(m_trend.season,order=c(1,1,2), seasonal=c(1,1,1))
+
+s211_011=Arima(m_trend.season,order=c(2,1,1), seasonal=c(0,1,1))
+s211_010=Arima(m_trend.season,order=c(2,1,1), seasonal=c(0,1,0))
+s211_110=Arima(m_trend.season,order=c(2,1,1), seasonal=c(1,1,0))
+s211_111=Arima(m_trend.season,order=c(2,1,1), seasonal=c(1,1,1))
+```
+
+On peut utiliser une approche empirique et regarder le critère AIC AICc et BIC des différents modèle obtenues on prendra celui qui minimise ces critères. 
+
+SARIMA  |        AIC       |        AICc       |       BIC       | 
+------- | ---------------- | ----------------- | --------------- |
+010_011 | `r s010_011$aic` | `r s010_011$aicc` |`r s010_011$bic` |
+010_010 | `r s010_010$aic` | `r s010_010$aicc` |`r s010_010$bic` |
+010_110 | `r s010_110$aic` | `r s010_110$aicc` |`r s010_110$bic` |
+010_111 | `r s010_111$aic` | `r s010_111$aicc` |`r s010_111$bic` |
+011_011 | `r s011_011$aic` | `r s011_011$aicc` |`r s011_011$bic` |
+011_010 | `r s011_010$aic` | `r s011_010$aicc` |`r s011_010$bic` |
+011_110 | `r s011_110$aic` | `r s011_110$aicc` |`r s011_110$bic` |
+011_111 | `r s011_111$aic` | `r s011_111$aicc` |`r s011_111$bic` |
+110_011 | `r s110_011$aic` | `r s110_011$aicc` |`r s110_011$bic` |
+110_010 | `r s110_010$aic` | `r s110_010$aicc` |`r s110_010$bic` |
+110_110 | `r s110_110$aic` | `r s110_110$aicc` |`r s110_110$bic` |
+110_111 | `r s110_111$aic` | `r s110_111$aicc` |`r s110_111$bic` |
+111_011 | `r s111_011$aic` | `r s111_011$aicc` |`r s111_011$bic` |
+111_010 | `r s111_010$aic` | `r s111_010$aicc` |`r s111_010$bic` |
+111_110 | `r s111_110$aic` | `r s111_110$aicc` |`r s111_110$bic` |
+111_111 | `r s111_111$aic` | `r s111_111$aicc` |`r s111_111$bic` |
+112_011 | `r s112_011$aic` | `r s112_011$aicc` |`r s112_011$bic` |
+112_010 | `r s112_010$aic` | `r s112_010$aicc` |`r s112_010$bic` |
+112_110 | `r s112_110$aic` | `r s112_110$aicc` |`r s112_110$bic` |
+112_111 | `r s112_111$aic` | `r s112_111$aicc` |`r s112_111$bic` |
+211_011 | `r s211_011$aic` | `r s211_011$aicc` |`r s211_011$bic` |
+211_010 | `r s211_010$aic` | `r s211_010$aicc` |`r s211_010$bic` |
+211_110 | `r s211_110$aic` | `r s211_110$aicc` |`r s211_110$bic` |
+211_111 | `r s211_111$aic` | `r s211_111$aicc` |`r s211_111$bic` |
+
+En terme de minimisation des critères AIC, AICc et BIC les 3 meilleurs modèles sont les modèles :
+SARIMA(1,1,2)(0,1,1), SARIMA(2,1,1)(1,1,1), SARIMA(1,1,1)(1,1,1) et le modèle initial SARIMA(0,1,1)(0,1,1)
+
+```{r echo=FALSE}
+
+```
+
+### Validation des modèles SARIMA obtenus
+
+```{r echo=FALSE}
+t_stat(s112_011)
+t_stat(s211_011)
+t_stat(s111_111)
+t_stat(s011_011)
+```
+
+```{r echo=FALSE}
+cor.arma(s112_011)
+cor.arma(s211_011)
+cor.arma(s111_111)
+cor.arma(s011_011)
+```
+
+```{r echo=FALSE}
+Box.test(s112_011$residuals,lag=20)
+Box.test(s211_011$residuals,lag=20)
+Box.test(s111_111$residuals,lag=20)
+Box.test(s011_011$residuals,lag=20)
+```
+
+```{r echo=FALSE, fig.height=7, fig.width=12}
+par(mfrow=c(2,2))
+plot(s112_011$residuals)
+plot(s211_011$residuals)
+plot(s111_111$residuals)
+plot(s011_011$residuals)
+```
+
+
+```{r echo=FALSE}
+
+```
+
+## Modélisation automatique avec R
+
+On estime le modèle de manière automatique en utilisant la fonction $auto.arima$ de R.
+
+```{r echo=FALSE}
+m_sncfSARIMA<-auto.arima(Traffic_SNCF.6379)
+m_sncfSARIMA
+```
+
+```{r echo=FALSE}
+t_stat(m_sncfSARIMA)
+```
+
+```{r echo=FALSE}
+cor.arma(m_sncfSARIMA)
+```
+
+```{r echo=FALSE}
+Box.test(m_sncfSARIMA$residuals,lag=20)
+```
+
+```{r echo=FALSE, fig.height=4, fig.width=12}
+par(mfrow=c(1,2))
+acf(m_sncfSARIMA$residuals,lag=120)
+pacf(m_sncfSARIMA$residuals,lag=120)
+```
+
+```{r echo=FALSE}
+plot(m_sncfSARIMA$residuals, col="blue")
+```
+
+## Prévisions et comparaison des modèles obtenus
+
+```{r echo=FALSE}
+predSARIMA=forecast(m_sncfSARIMA,12)
+```
+
+```{r echo=FALSE}
+predSARIMA
+```
+
+```{r echo=FALSE}
+plot(predSARIMA)
+points(Traffic_SNCF,type="l",col="darkgreen",lwd=1)
+legend('top',c("Valeurs observées","Prédictions"), col=c("darkgreen","blue"),lty=rep(1,2),lwd = rep(2,2))
+
+```
+* Comparaison entre SARIMA et lissage exponentiel
+```{r echo=FALSE}
+fitHW=ets(Traffic_SNCF.6379,model="MMM")
+predHW=forecast(fitHW,h=12)
+```
+
+```{r echo=FALSE, fig.height=5, fig.width=15}
+par(mfrow=c(1,2))
+plot(Traffic_SNCF,col="darkgreen",lwd=1,ylab="Nombre de Passagers",xlab="Temps", xlim=c(1962,1982),ylim=range(c(Traffic_SNCF,predSARIMA$lower,predSARIMA$upper,predHW$lower,predHW$upper)))
+points(predSARIMA$mean,col="red",lwd=2,type='l')
+#points(predSARIMA$lower[,2],col="red",type='l',lty=2)
+#points(predSARIMA$upper[,2],col="red",type='l',lty=2)
+#points(predHW$mean,col="blue",lwd=2,type='l')
+#points(predHW$lower[,2],col="blue",type='l',lty=3)
+#points(predHW$upper[,2],col="blue",type='l',lty=3)
+legend("topleft",c("Vraies valeurs","SARIMA"),col=c("darkgreen","red"),lty=c(rep(1,3),2),lwd=c(rep(2,3),1),cex=0.7)
+
+
+plot(Traffic_SNCF,col="darkgreen",lwd=1,ylab="Nombre de Passagers",xlab="Temps", xlim=c(1978,1982),ylim=range(c(Traffic_SNCF,predSARIMA$lower,predSARIMA$upper,predHW$lower,predHW$upper)))
+points(predSARIMA$mean,col="red",lwd=2,type='l')
+points(predSARIMA$lower[,2],col="red",type='l',lty=2)
+points(predSARIMA$upper[,2],col="red",type='l',lty=2)
+points(predHW$mean,col="blue",lwd=2,type='l')
+points(predHW$lower[,2],col="blue",type='l',lty=3)
+points(predHW$upper[,2],col="blue",type='l',lty=3)
+legend("topleft",c("Vraies valeurs","SARIMA","Liss.exp."),col=c("darkgreen","red","blue"),lty=c(rep(1,3),2),lwd=c(rep(2,3),1),cex=0.7)
+```
+
+* Remarque : la stabilisation de la variance en utilisant la fonction log n'apporte pas l'atténuation souhaité, et est sans effet ici.
+
+```{r eval=FALSE, echo=FALSE}
+m_LogSncfSARIMA=auto.arima(log(Traffic_SNCF.6379))
+```
+
+```{r eval=FALSE, echo=FALSE}
+t_stat(m_LogSncfSARIMA)
+```
+
+```{r eval=FALSE, echo=FALSE}
+cor.arma(m_LogSncfSARIMA)
+```
+
+```{r eval=FALSE, echo=FALSE}
+Box.test(m_LogSncfSARIMA$residuals,lag=20)
+
+```
+
+```{r echo=FALSE}
+
+```
+
+
+
+\pagebreak
+
+# Partie II - Tentative de modélisation d'un indice boursier de type action à l'aide de processus ARIMA
+
+## Introduction
+On cherche dans cette partie à modéliser par des processus de type ARIMA ou assimilé (SARIMA) l'évolution du prix d'indice boursier de type acion.
+En fait un poretefeuille d'actions, ou indice type CAC40, DAX, Eurostoxx, SP500...
+Pour cette première étude on va se baser sur l'indice CAC40.
+A parir de la modélisation (présupposée possible) obtenu on va chercher à prévoir l'évolution de l'indice en question, à horizon 3 mois, 6 mois voire 1 an.
+
+Notre but est double :
+
+* La définition de stress test de type action : A partir de la modélisation obtenue, et de l'intervalle de confiance sous jacent, on va chercher à déterminer une valeur de choc absolue à la hausse et à la baisse.
+Cette méthodologie de définition d'un choc absolue associé à un niveau de confiance devrait nous aider à définir un scénario économique plausible (avec un certain seuil de confiance) à horizon 3mois, 6mois et 1an.
+Ainsi cette modélisation devrait pouvoir nos guider dans la détermination de stress test de type action. 
+Pour ête complet quant à la définition de stress test de type financier, il faudrait parvenir à définir une méthodologie équivalente pour les produits de types taux ou courbes de taux d'intérêt.
+Ce dernier cas est plus complexe dans la mesure où on cherche à modéliser une surface et les séries temporelles ne sont peut ête pas appropriées.
+Plus précisemment on cherche à modéliser un faisceau de courbes aléatoires qui dépendent les unes des autres. Le mécanisme de dépendance étant en parti connu, ou plutôt des modèles éxistent.
+
+* Elaboration d'un portefeuille simplifié : Une fois les principaux indices modélisé, on va chercher à décomposer nos portefeuilles sur ces indices et ainsi constituer un portefeuille simplifié.
+Ce portefeuille simplifié serait la base d'un indice benchmark du portefeuille étudié.
+
+Dans un premier temps on va étudier la série temporelle associée à l'évoultion du prix de l'indice étudié le CAC40 : représenttion graphique, saisonnalité, tendance, stationarité...
+Pour entrer dans le cadre d'un modèle ARMA(p,q), on va dans un premier temps, étudier la stationarité de notre série. Et la rendre stationnaire le cas échéant.
+A partir de là on cherchera à déterminer les paramètres p et q du processus auto régressif AR(p) et moyenne mobile MA(q) sous jacent à parir des graphiques ACF et PACF.
+Enfin on ajustera les coefficient pour obtenir notre modèle. On terminera l'étude en validant le modèle: blancheur des résidus, ndépendance, normalité. 
+On pourra alors après validation l'utiliser pour nos prédictions.
+
+## Lecture des données et premières analyses
+
+Les données ont été récupérées sur le site Yahoo Finance. Ticker "^FCHI" pour les données de l'indice CAC40.
+On considère un jeu de données quotidienne et un autre mensuel. Avec dans les 2 cas un historique de Janvier 1998 à Janvier 2020.
+A partir de cet historique de 22 ans on va construire différentes séries de profondeur d'historique différente.
+Après avoir annalysé ces séries on essaiera de construire un modèle de type ARIMA pour chacune d'elles.
+
+```{r d1_summary}
+dataCAC40_raw_d <-read.table("Daily_Data_CAC40_1997-2019.csv", sep=",", dec=".",header=T, na.strings = "null")
+dataCAC40_raw_m <-read.table("Mounthly_Data_CAC40_1997-2019.csv", sep=",", dec=".",header=T, na.strings = "null")
+```
+
+### Traitement des données 
+
+Dans le cas des données journalières, il y a des données manquantes. On va les supprimer.
+La variable Date est aussi connvertit en structure date.
+```{r echo=FALSE}
+summary(dataCAC40_raw_d)
+```
+
+```{r echo=FALSE}
+dataCAC40_d<-dataCAC40_raw_d[which(dataCAC40_raw_d$Open != "NA"),]
+#dataCAC40_d<-dataCAC40_raw
+#dataCAC40_d[is.na(dataCAC40)] <- 0
+
+FrameCAC40_d <- as.data.frame(dataCAC40_d)
+FrameCAC40_d[['Date']] <- as.Date(FrameCAC40_d[['Date']], format='%Y-%m-%d')  
+FrameCAC40_d[,2] <- as.numeric(as.character(FrameCAC40_d[,2]))
+FrameCAC40_d[,3] <- as.numeric(as.character(FrameCAC40_d[,3]))
+FrameCAC40_d[,4] <- as.numeric(as.character(FrameCAC40_d[,4]))
+FrameCAC40_d[,5] <- as.numeric(as.character(FrameCAC40_d[,5]))
+FrameCAC40_d[,6] <- as.numeric(as.character(FrameCAC40_d[,6]))
+
+head(FrameCAC40_d)
+#summary(FrameCAC40_d)
+```
+
+Dans le cas des données mensuelles ont n'a pas de problème de données manquantes.
+
+```{r include=FALSE}
+summary(dataCAC40_raw_m)
+```
+
+```{r echo=FALSE}
+dataCAC40_m<-dataCAC40_raw_m[which(dataCAC40_raw_m$Open != "NA"),]
+FrameCAC40_m <- as.data.frame(dataCAC40_m)
+FrameCAC40_m[['Date']] <- as.Date(FrameCAC40_m[['Date']], format='%Y-%m-%d')  
+FrameCAC40_m[,2] <- as.numeric(as.character(FrameCAC40_m[,2]))
+FrameCAC40_m[,3] <- as.numeric(as.character(FrameCAC40_m[,3]))
+FrameCAC40_m[,4] <- as.numeric(as.character(FrameCAC40_m[,4]))
+FrameCAC40_m[,5] <- as.numeric(as.character(FrameCAC40_m[,5]))
+FrameCAC40_m[,6] <- as.numeric(as.character(FrameCAC40_m[,6]))
+#summary(FrameCAC40_m)
+#head(FrameCAC40_m)
+```
+
+### conversion des données en objet *time series*
+Ici on convertit les données en objet R ts (time series)
+Dans le cas des données journalières on utilise pour le parmaètre de fréquence (nb jours dans l'année) la valeur 256
+Ce qui correspond au nombre de jours par an (jours ouvrès sans les jours de fermeture) que l'on obtient une fois les NA supprimés.(On remarque que cette valeur de fréquence influe la vitesse de traitement lors de l'appel de la fonction auto.arima)
+
+```{r echo=FALSE}
+val<-5 #Close
+freq<-256
+
+tsCAC40_1998_Open_d<- FrameCAC40_d[FrameCAC40_d[,1]> as.Date("1997-12-31"),]
+tsCAC40_1998_Open_d=ts(as.vector(tsCAC40_1998_Open_d[,val]),start=c(1998,1),frequency=freq)
+
+FrameCAC40_2002_d <- FrameCAC40_d[FrameCAC40_d[,1]> as.Date("2001-12-31"),]
+tsCAC40_2002_Open_d=ts(as.vector(FrameCAC40_2002_d[,val]),start=c(2002,1),frequency=freq)
+
+FrameCAC40_2008_d <- FrameCAC40_d[FrameCAC40_d[,1]> as.Date("2007-12-31"),]
+tsCAC40_2008_Open_d=ts(as.vector(FrameCAC40_2008_d[,val]),start=c(2008,1),frequency=freq)
+
+FrameCAC40_2014_d <- FrameCAC40_d[FrameCAC40_d[,1]> as.Date("2013-12-31"),]
+tsCAC40_2014_Open_d=ts(as.vector(FrameCAC40_2014_d[,val]),start=c(2014,1),frequency=freq)
+```
+```{r echo=FALSE}
+tsCAC40_1998_Open_m<- FrameCAC40_m[FrameCAC40_m[,1]> as.Date("1997-12-31"),]
+tsCAC40_1998_Open_m=ts(as.vector(FrameCAC40_m[,val]),start=c(1998,1),frequency=12)
+
+FrameCAC40_2002_m <- FrameCAC40_m[FrameCAC40_m[,1]> as.Date("2001-12-31"),]
+tsCAC40_2002_Open_m=ts(as.vector(FrameCAC40_2002_m[,val]),start=c(2002,1),frequency=12)
+
+FrameCAC40_2008_m <- FrameCAC40_m[FrameCAC40_m[,1]> as.Date("2007-12-31"),]
+tsCAC40_2008_Open_m=ts(as.vector(FrameCAC40_2008_m[,val]),start=c(2008,1),frequency=12)
+
+FrameCAC40_2014_m <- FrameCAC40_m[FrameCAC40_m[,1]> as.Date("2013-12-31"),]
+tsCAC40_2014_Open_m=ts(as.vector(FrameCAC40_2014_m[,val]),start=c(2014,1),frequency=12)
+```
+
+## Analyse des séries temporelles obtenues 
+Comme déja énnoncé on va étudier plusieurs profondeur d'historique.
+
+* Toute la série de janvier 1998 à janvier 2020 soit 22 années de profondeur d'historique.
+* A partir de Janvier 2002 jusqu'à janvier 2020 soit 18 années de profondeur d'historique.
+* A partir de Janvier 2008 jusqu'à janvier 2020 soit 12 années de profondeur d'historique.
+* A partir de Janvier 2014 jusqu'à janvier 2020 soit 5 années de profondeur d'historique.
+Et on considére 2 jeux de données, avec une fréquence quotidienne et mensuelle.
+
+### Graphique des séries temporelles - valeur observée Prix à la fermeture (Close)
+
+On a 4 séries temporelles possibles en fonction du choix de la quantité observée (High, Low, Open, Close, Volume).
+On va s'intéresser à la valeur à la fermeture pour la cotation de l'indice CAC40 (Close).
+
+```{r echo=FALSE, fig.height=8, fig.width=15}
+par(mfrow=c(2,2))
+plot(tsCAC40_1998_Open_d, xlab="Time",ylab="Open",main="Time serie - CAC40 Daily - 1998/2020")
+plot(tsCAC40_2002_Open_d, xlab="Time",ylab="Open",main="Time serie - CAC40 Daily - 2002/2020")
+plot(tsCAC40_1998_Open_m,xlab="Time",ylab="Open",main="Time serie - CAC40 Monthly - 1998/2020")
+plot(tsCAC40_2002_Open_m,xlab="Time",ylab="Open",main="Time serie - CAC40 Daily - 2002/2020")
+```
+
+```{r echo=FALSE, fig.height=8, fig.width=15}
+par(mfrow=c(2,2))
+plot(tsCAC40_2008_Open_d,xlab="Time",ylab="Open",main="Time serie - CAC40 - 2008/2020")
+plot(tsCAC40_2014_Open_d,xlab="Time",ylab="Open",main="Time serie - CAC40 - 20142/2020")
+plot(tsCAC40_2008_Open_m,xlab="Time",ylab="Open",main="Time serie - CAC40 - 2008/2020")
+plot(tsCAC40_2014_Open_m,xlab="Time",ylab="Open",main="Time serie - CAC40 - 20142/2020")
+```
+Dans le cas des données mensuelles On retrouve biensûr la forme globale de la série mais moins bruitée.
+\pagebreak
+
+### Représentations graphiques : month-plot et lag-plot
+
+Si le diagramme retardée suggére une corrélation entre les deux séries, on dit que la série présente une autocorrélation d'ordre k.Ce diagramme permet de comprendre la dépendance de la série par rapport à son passée. Il donne une vision locale de la série, si y a une corrélation entre la série a un instant et la série 1, 2... instants avant.
+
+```{r echo=FALSE, fig.height=3, fig.width=6}
+monthplot(tsCAC40_2014_Open_m)
+```
+```{r echo=FALSE, fig.height=4, fig.width=6}
+lag.plot(tsCAC40_2014_Open_m,lags=12,layout=c(3,4),do.lines=FALSE)
+```
+\pagebreak
+
+### Etude de la stationarité
+La stationnarité est la stationnarité du processus au sens faible.
+Un tel processus doit avoir les propriétés suivantes : La moyenne et la variance ne varient pas au cours du temps et le processus n a pas de tendance.
+Pour vérifier ces hypothèses, on s'appuiera sur une analyse des graphique d'autocorrélation ACF et d'autocorrélation partielle PACF ainsi que sur le test de $Dickey-Fuller$.
+
+* Fonction d'autocorrélation ACF et PACF
+
+```{r echo=FALSE, fig.height=5, fig.width=15}
+par(mfrow=c(1,2))
+
+#acf(tsCAC40_1998_Open_d, lag.max=60)    
+#pacf(tsCAC40_1998_Open_d, lag.max=60)     
+#
+##acf(tsCAC40_2002_Open_d, lag.max=60)       
+#pacf(tsCAC40_2002_Open_d, lag.max=60)           
+
+#acf(tsCAC40_2008_Open_d, lag.max=60)          
+#pacf(tsCAC40_2008_Open_d, lag.max=60)          
+
+acf(tsCAC40_2014_Open_d, lag.max=60) 
+pacf(tsCAC40_2014_Open_d, lag.max=60)  
+
+```
+
+On constate que les variables sont liées entre elles, i.e. les données ne semblent pas être stationnaires. 
+```{r echo=FALSE, warning=FALSE}
+#adf.test(tsCAC40_1998_Open_d)
+#adf.test(tsCAC40_2002_Open_d)
+#adf.test(tsCAC40_2008_Open_d)
+t2014d<-adf.test(tsCAC40_2014_Open_d)
+```
+On confirme cette hypothèse à l'aide d'un test de $Dickey-Fuller$ on p_value=`r t2014d$p.value`.
+
+```{r echo=FALSE, fig.height=8, fig.width=15}
+par(mfrow=c(2,4))
+acf(tsCAC40_1998_Open_m, lag.max=60)           
+pacf(tsCAC40_1998_Open_m, lag.max=60)     
+
+acf(tsCAC40_2002_Open_m, lag.max=60)       
+pacf(tsCAC40_2002_Open_m, lag.max=60)           
+
+acf(tsCAC40_2008_Open_m, lag.max=60)          
+pacf(tsCAC40_2008_Open_m, lag.max=60)          
+
+acf(tsCAC40_2014_Open_m, lag.max=60)            
+pacf(tsCAC40_2014_Open_m, lag.max=60)         
+
+```
+
+Là aussi on constate que les variables sont liées entre elles, i.e. les données ne semblent pas être stationnaires. 
+On confirme cette hypothèse à l'aide d'un test de $Dickey-Fuller$.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+t1998<-adf.test(tsCAC40_1998_Open_m)
+t2002<-adf.test(tsCAC40_2002_Open_m)
+t2008<-adf.test(tsCAC40_2008_Open_m)
+t2014<-adf.test(tsCAC40_2014_Open_m)
+```
+
+série   |     Dickey-Fuller    |    Lag order       | p-value           | 
+------- | ---------------------| ------------------ | ----------------- |
+1998    | `r t1998$statistic`  |`r t1998$parameter` | `r t1998$p.value` | 
+2002    | `r t2002$statistic`  |`r t2002$parameter` | `r t2002$p.value` |
+2008    | `r t2008$statistic`  |`r t2008$parameter` | `r t2008$p.value` |
+2014    | `r t2014$statistic`  |`r t2014$parameter` | `r t2014$p.value` |
+
+La p-valeur de ce test est importante et confirme donc que les données ne sont pas stationnaires.
+Il y a une cependant exception pour la série 2008.
+
+### Decomposition des séries temporelles :
+Ici on va décomposer la série temporelles en utilisant la fonction décompose de R de façon à avoir une idée générale de la tendance (trend) saisonalité et bruit.
+
+```{r echo=FALSE}
+decompose_1998_d <- decompose(tsCAC40_1998_Open_d)
+#plot(decompose_1998_d)#, col = "red")
+
+decompose_1998_m <- decompose(tsCAC40_1998_Open_m)
+#plot(decompose_1998_m)#, col = "red")
+
+decompose_2002_d <- decompose(tsCAC40_2002_Open_d)
+#plot(decompose_2002_d)#, col = "red")
+
+decompose_2002_m <- decompose(tsCAC40_2002_Open_m)
+#plot(decompose_2002_m)#, col = "red")
+
+decompose_2008_d <- decompose(tsCAC40_2008_Open_d)
+#plot(decompose_2008_d)#, col = "red")
+
+decompose_2008_m <- decompose(tsCAC40_2008_Open_m)
+#plot(decompose_2008_m)#, col = "red")
+
+decompose_2014_d <- decompose(tsCAC40_2014_Open_d)
+plot(decompose_2014_d)#, col = "red")
+
+decompose_2014_m <- decompose(tsCAC40_2014_Open_m)
+#plot(decompose_2014_m)#, col = "red")
+```
+
+On retrouve les formes générales mais mon bruitées.La saisonnalité ne semble pas très nette.
+
+On va essayer de rendre stationnaire nos séries. C'est un prérequis pour pouvoir effectuer une modilisation de type ARMA
+En utilisant la différentiation on va essayer de se ramener à un processus ARMA.Ainsi on va essayer de modéliser l'évolution du prix de l'indice CAC4O par un processus ARIMA.
+On commence donc par différentier les séries. Le facteur utilsé est de 1.
+\pagebreak
+
+## Détermination des modèles ARIMA
+Après avoir rappelé la définition d'un processus ARIMA(p,d,q) et ARMA(p,q) on cherchera à déterminer les paramètres p et q.
+
+### Définitions 
+
+Un processus $X_t$  t2Z est un processus ARIMA(p,d,q) si $\Delta^dX$ est un processus ARMA(p,q).
+Les processus ARMA(p,q) font parti d'une famille très large des processus stationnaires.
+Ces processus sont composés des processus auto-régressifs AR(p) et de moyennes mobiles ("moving average") MA(q).
+
+* Processus AR(p) - Processus auto régressif d'ordre p
+
+$$
+\forall t=1,\dots,n\quad X_t = \beta + \alpha_1X_{t-1} + \alpha_2X_{t-2} + ... + \alpha_pX_{t-p} + \varepsilon_t \text{ (où }\varepsilon_t \text{ est un bruit blanc)}
+$$
+Avec l'opérateur retard cette équation se réécrit :
+$$
+\forall t=1,\dots,n\quad X_t = \beta + \varepsilon_{t} + (\alpha_1B^{1} + \alpha_2B^2 + ... + \alpha_qB^q)X_{t}
+$$
+La fonction d'autocorrélation (ACF) d'un AR(p) montre une décroissance exponentielle avec ou sans oscillations vers 0.
+La fonction d'autocorrélation partielle (PACF) d'un AR(p) est nulle à partir de l'ordre p+1.
+
+* Processus MA(q) - Processus auto régressif d'ordre q
+
+Ils sont construits a partir de l'idée que l'observation au temps t s'explique linéairement par les observations d'un bruit blanc.
+$$
+\forall t=1,\dots,n\quad X_t = \beta + \alpha_1\varepsilon_{t-1} + \alpha_2\varepsilon_{t-2} + ... + \alpha_q\varepsilon_{t-q} \text{ (où les }\varepsilon_t \text{ sont des bruits blanc centré)}
+$$
+Avec l'opérateur retard cette équation se réécrit :
+$$
+\forall t=1,\dots,n\quad X_t = \mu + (\alpha_1B^{1} + \alpha_2B^2 + ... + \alpha_qB^q)\varepsilon_{t}
+$$
+Un processus MA(q) est toujours stationnaire quelles que soient les valeurs des $\alpha_i$ , il est de plus de moyenne $\mu$.
+L'ACF d'un processus MA(q) est nulle à partir de l'ordre q + 1.
+si une ACF empirique semble nulle à partir d'un certain ordre q + 1, on peut penser qu'il s'agit de l'ACF d'une série MA(q).
+
+Un processus ARMA est la combinaison des processus autorégressifs et moyennes mobiles. Ainsi, avec les notations précédentes, (X_t) est un processus ARMA(p,q), si :
+$$
+\forall t=1,\dots,n\quad X_t = \beta + \alpha_1\varepsilon_{t-1} + \alpha_2\varepsilon_{t-2} + ... + \alpha_q\varepsilon_{t-q} \text{ (où les }\varepsilon_t \text{ sont des bruits blanc centré)}
+$$
+On cherche maintenant à se ramener à un processus sationnaire en utilsant la différentiation. 
+Si l'on est bien dans le cadre d'un modèle ARIMA, après l'opération de différentiation on se ramènera à l'étude d'un processus ARMA(p,q). 
+
+### Stationarisation des processus par differentiation des séries 
+Pour tenter de rendre la série stationnaire, on applique la méthode de différentiation. On utilise la function R diff.
+En paramètre on passe un facteur de 1 pour la différence et de 0 pour la saisonnalité.
+On retrouve l'idée de la transformation Log-return $R_t$ des prix $X_t$ où $R_t=Log(X_t/X_{t-1})$ qui est classique en finance.
+
+* Séries obtenues par differentiation pour les 2 jeux de données quotidien et mensuel à partir de 1998 et 2002
+
+```{r echo=FALSE, fig.height=7, fig.width=13}
+par(mfrow=c(2,2))
+diff_1998_d<-diff(log(tsCAC40_1998_Open_d),differences = 1)
+plot(diff_1998_d)#,col="red")
+
+diff_2002_d<-diff(log(tsCAC40_2002_Open_d),differences = 1)
+plot(diff_2002_d)#,col="red")
+
+diff_1998_m<-diff(log(tsCAC40_1998_Open_m),differences = 1)
+plot(diff_1998_m,col="blue")
+
+diff_2002_m<-diff(log(tsCAC40_2002_Open_m),differences = 1)
+plot(diff_2002_m,col="blue")
+
+```
+
+Au sens de la stationnarité faible, les séries semblent bien stationnaire.
+On retrouve bien une moyenne nulle et cosntante dans le temps.
+Ainsi qu'aussi une variance constante bien que cet aspect soit moins évident.
+On affaibliera cetre dernière hypothèse loes de l'étude des modèles GARCH au dernier paragraphe.
+
+#### Séries obtenues par differentiation pour les 2 jeux de données quotidien et mensuel à partir de 2008 et 2014
+```{r echo=FALSE, fig.height=7, fig.width=13}
+par(mfrow=c(2,2))
+
+diff_2008_d<-diff(log(tsCAC40_2008_Open_d),differences = 1)
+plot(diff_2008_d)#,col="red")
+
+diff_2014_d<-diff(log(tsCAC40_2014_Open_d),differences = 1)
+plot(diff_2014_d)#,col="red")
+
+diff_2008_m<-diff(log(tsCAC40_2008_Open_m),differences = 1)
+plot(diff_2008_m,col="blue")
+
+diff_2014_m<-diff(log(tsCAC40_2014_Open_m),differences = 1)
+plot(diff_2014_m,col="blue")
+
+```
+
+L'hypothèse de stationnarité du processus ainsi transformé, étant vérifié on peut envisager une modélisation ARIMA.
+On passe maintenat à la détermination des paramètres p et q du mopdèle ARMA(p,q).
+
+L'estimation de p et de q se fait simplement en lisant le graphe des fonctions d'auto-corrélation et d'auto-corrélation partielle. 
+Le graphe de la fonction d'auto-corrélation nous fournit la valeur de q. Le graphe de la fonction d'autocorrélation partielle nous donne la valeur de p. 
+On peut alors essayer d'améliorer le modèle en prenant des valeurs de p et q plus petites que les valeurs obtenues précédemment, en utilisant notamment les critères d'AIC ou de BIC.
+
+Les autres paramètres $\alpha_i$ et $\alpha_i$ se font pas minimisation / regression
+
+### Détermination des paramètres p et q, études des corrélogrammes et autocorrélations partiels
+The next step is to select appropriate ARIMA model, which means finding the most appropriate values of p and q for an ARIMA(p,d,q) model. You usually need to examine the correlogram and partial correlogram of the stationary time series for this.
+To plot a correlogram and partial correlogram, we can use the acf() and pacf() functions in R, respectively.
+
+```{r echo=FALSE, fig.height=4, fig.width=15}
+par(mfrow=c(1,4))
+#acf(diff_1998_d, lag.max=60)             
+#acf(diff_2002_d, lag.max=60)
+acf(diff_2008_d, lag.max=60)
+
+
+#pacf(diff_1998_d, lag.max=60)             
+#pacf(diff_2002_d, lag.max=60)
+pacf(diff_2008_d, lag.max=60)
+acf(diff_2014_d, lag.max=60)
+pacf(diff_2014_d, lag.max=60)
+```
+
+
+```{r echo=FALSE, fig.height=7, fig.width=14}
+par(mfrow=c(2,3))
+acf(diff_1998_m, lag.max=60)             
+#acf(diff_2002_m, lag.max=60)
+acf(diff_2008_m, lag.max=60)
+acf(diff_2014_m, lag.max=60)
+
+pacf(diff_1998_m, lag.max=60)             
+#pacf(diff_2002_m, lag.max=60)
+pacf(diff_2008_m, lag.max=60)
+pacf(diff_2014_m, lag.max=60)
+```
+
+Cependant pour certains processus, ni la fonction d'autocorrélation, ni la fonction d'autocorrélation partielle ne possdent de point de rupture. Dans de tels cas, il faut construire un modele mixte.
+
+La PACF d'un processus qui a une composante moyenne mobile a une décroissance exponentielle. Ainsi la PACF d'un ARMA(p,q), q > 0 présente une décroissance exponentielle.
+
+Ici la PACF ne décroît pas exponentiellement, et rien de très net ne ressort des différents graphiques.
+
+### Méthode automatique de calibration d'un modèles ARIMA
+R provides a function auto.arima, which returns best ARIMA model according to either AIC, AICc or BIC value. The function conducts a search over possible model within the order constraints provided.
+  
+```{r arima_1998_m, echo=FALSE}
+#arima_1998_d <- auto.arima(tsCAC40_1998_Open_d, max.p = 3, max.q = 3, max.d = 3)
+arima_1998_m <- auto.arima(tsCAC40_1998_Open_m, max.p = 3, max.q = 3, max.d = 3)
+#arima_1998_d
+#arima_1998_m
+```
+
+Pour les 2 jeux de données à partir de 2008 on obtient un SARIMA(0,1,0)(1,0,0) dans le cas des données quotidiennes
+et un SARIMA(1,1,0)(2,0,2) pour les données mensuelles.
+```{r arima_2008, echo=FALSE, message=FALSE, warning=FALSE}
+#arima_2008_d <- auto.arima(tsCAC40_2008_Open_d, max.p = 3, max.q = 3, max.d = 3)
+arima_2008_m <- auto.arima(tsCAC40_2008_Open_m, max.p = 3, max.q = 3, max.d = 3)
+#arima_2008_d
+arima_2008_m
+```
+
+Pour les 2 jeux de données à partir de 2014 on obtient un ARIMA(0,1,0) soit une marche aléatoire.
+```{r arima_2014, echo=FALSE}
+arima_2014_d <- auto.arima(tsCAC40_2014_Open_d, max.p = 3, max.q = 3, max.d = 3)
+arima_2014_m <- auto.arima(tsCAC40_2014_Open_m, max.p = 3, max.q = 3, max.d = 3)
+arima_2014_d
+arima_2014_m
+```
+
+```{r echo=FALSE}
+arima_010=Arima(diff(tsCAC40_2014_Open_d,difference=1),order=c(0,1,0))
+arima_110=Arima(diff(tsCAC40_2014_Open_d,difference=1),order=c(1,1,0))
+arima_011=Arima(diff(tsCAC40_2014_Open_d,difference=1),order=c(0,1,1))
+arima_111=Arima(diff(tsCAC40_2014_Open_d,difference=1),order=c(1,1,1))
+arima_012=Arima(diff(tsCAC40_2014_Open_d,difference=1),order=c(0,1,2))
+arima_112=Arima(diff(tsCAC40_2014_Open_d,difference=1),order=c(1,1,2))
+arima_210=Arima(diff(tsCAC40_2014_Open_d,difference=1),order=c(2,1,0))
+arima_211=Arima(diff(tsCAC40_2014_Open_d,difference=1),order=c(2,1,1))
+arima_212=Arima(diff(tsCAC40_2014_Open_d,difference=1),order=c(2,1,2))
+```
+
+On peut utiliser une approche empirique et regarder le critère AIC AICc et BIC des différents modèle obtenues on prendra celui qui minimise ces critères. 
+
+* Voici le résultat obtenu pour la série 2014 quotidienne :
+
+ARIMA   |        AIC        |        AICc       |       BIC       | 
+------- | ----------------- | ------------------| --------------- |
+010     | `r arima_010$aic` | `r arima_010$aic` |`r arima_010$aic`|
+110     | `r arima_110$aic` | `r arima_110$aic` |`r arima_110$aic`|
+011     | `r arima_011$aic` | `r arima_011$aic` |`r arima_011$aic`|
+111     | `r arima_111$aic` | `r arima_111$aic` |`r arima_111$aic`|
+012     | `r arima_012$aic` | `r arima_012$aic` |`r arima_012$aic`|
+112     | `r arima_112$aic` | `r arima_112$aic` |`r arima_112$aic`|
+210     | `r arima_210$aic` | `r arima_210$aic` |`r arima_210$aic`|
+211     | `r arima_211$aic` | `r arima_211$aic` |`r arima_211$aic`|
+212     | `r arima_212$aic` | `r arima_212$aic` |`r arima_212$aic`|
+
+On remarque que selon ce critère plusieurs modéles sont très proches : ARIMA(0,1,0), ARIMA(0,1,1), ARIMA(0,1,2), ARIMA(1,1,1), ARIMA(1,1,2), ARIMA(2,1,1),  ARIMA(2,1,2)
+
+## Validation des modèles obtenus
+
+### Blancheur des résidus
+
+```{r echo=FALSE, warning=FALSE}
+#Box.test(arima_1998_d$residuals,lag=20,type="Box-Pierce")
+#Box.test(arima_2008_d$residuals,lag=20,type="Box-Pierce")
+t2014d <- Box.test(arima_2014_d$residuals,lag=20,type="Box-Pierce")
+```
+
+
+```{r echo=FALSE, warning=FALSE}
+t1998  <- Box.test(arima_1998_m$residuals,lag=20,type="Box-Pierce")
+t1998b <- Box.test(arima_1998_m$residuals,lag=20,type="Ljung-Box")
+t2008  <- Box.test(arima_2008_m$residuals,lag=20,type="Box-Pierce")
+t2008b <- Box.test(arima_2008_m$residuals,lag=20,type="Ljung-Box")
+t2014  <- Box.test(arima_2014_m$residuals,lag=20,type="Box-Pierce")
+t2014b <- Box.test(arima_2014_m$residuals,lag=20,type="Ljung-Box")
+```
+
+*Test de Box-Pierce*
+
+série   |     X-squared        |       df           | p-value           | 
+------- | ---------------------| ------------------ | ----------------- |
+1998    | `r t1998$statistic`  |`r t1998$parameter` | `r t1998$p.value` | 
+2008    | `r t2008$statistic`  |`r t2008$parameter` | `r t2008$p.value` |
+2014    | `r t2014$statistic`  |`r t2014$parameter` | `r t2014$p.value` |
+
+*Test de Ljung-Box*
+
+série   |     X-squared         |       df            |      p-value       | 
+------- | ----------------------| ------------------- | ------------------ |
+1998    | `r t1998b$statistic`  |`r t1998b$parameter` | `r t1998b$p.value` | 
+2008    | `r t2008b$statistic`  |`r t2008b$parameter` | `r t2008b$p.value` |
+2014    | `r t2014b$statistic`  |`r t2014b$parameter` | `r t2014b$p.value` |
+
+Dans le cas des modèles sur données mensuelles le test de blancheur des résidus accepte le modèle, et ce dans tous les cas.
+Dans le cas des données quotidienne au contraire le modèle n'est pas validé la p-value la plus importante est obtenu pour les données 2014: `r t2014d$p.value`.
+La profondeur de l'historique et la forme de la courbe associé semble aussi jouer un rôle.
+
+```{r echo=FALSE, warning=FALSE}
+#t_stat(arima_1998_d)
+#cor.arma(arima_1998_d)
+#t_stat(arima_2008_d)
+#cor.arma(arima_2008_d)
+#t_stat(arima_2014_d)
+#cor.arma(arima_2014_d)
+
+```
+
+### Graphiques de résidus obtenus à partir des différents modèles
+```{r echo=FALSE,  fig.height=5, fig.width=15, warning=FALSE}
+par(mfrow=c(1,2))
+#plot.ts(arima_1998_m$residuals) 
+#plot.ts(arima_2008_d$residuals)    
+ 
+#plot.ts(arima_2008_m$residuals, col="blue")  
+plot.ts(arima_2014_d$residuals) 
+plot.ts(arima_2014_m$residuals, col="blue")    
+
+```
+
+Dans le cas des données quotidiennes on a une variance non constante.
+On va utiliser les modèles GARCH comme alternatve. On verra qu'ils sont mieux adaptées à la modélisation des séries financières.
+
+### Normalité des résidus
+```{r echo=FALSE}
+
+#plot.ts(arima_1998_m$residuals) 
+#shapiro.test(arima_2008_d$residuals)    
+s2014d<-shapiro.test(arima_2014_d$residuals) 
+s1998<-shapiro.test(arima_1998_m$residuals)  
+#s2002<-shapiro.test(arima_2002_m$residuals) 
+s2008<-shapiro.test(arima_2008_m$residuals)  
+s2014<-shapiro.test(arima_2014_m$residuals)    
+```
+
+*Test de `r s2014$method`*
+
+série   |     p-value       |
+------- | ------------------| 
+1998    | `r s1998$p.value` | 
+2008    | `r s2008$p.value` |
+2014    | `r s2014$p.value` |
+
+```{r echo=FALSE, warning=FALSE}
+#ggplot(data.frame(residuals = forecasts_1998_d$residuals), aes(residuals)) + geom_histogram(bins = 50, aes(y = ..density..), col = "red", fill = "red", alpha = 0.3) + geom_density()
+
+#ggplot(data.frame(residuals = arima_2008_d$residuals), aes(residuals)) + geom_histogram(bins = 50, aes(y = ..density..), col = "red", fill = "red", alpha = 0.3) + geom_density()
+
+##ggplot(data.frame(residuals = arima_2014_d$residuals), aes(residuals)) + geom_histogram(bins = 50, aes(y = ..density..), col = "red", fill = "red", alpha = 0.3) + geom_density()
+
+```
+
+```{r echo=FALSE, warning=FALSE}
+#ggplot(data.frame(residuals = arima_1998_m$residuals), aes(residuals)) + geom_histogram(bins = 50, aes(y = ..density..), col = "red", fill = "red", alpha = 0.3) + geom_density()
+
+#ggplot(data.frame(residuals = arima_2008_m$residuals), aes(residuals)) + geom_histogram(bins = 50, aes(y = ..density..), col = "red", fill = "red", alpha = 0.3) + geom_density()
+
+#ggplot(data.frame(residuals = arima_2014_m$residuals), aes(residuals)) + geom_histogram(bins = 50, aes(y = ..density..), col = "red", fill = "red", alpha = 0.3) + geom_density()
+
+```
+
+### Prévisions à partir des modèles obtenus
+Ces prévisions seront utilisées pour nous permettre de déterminer les valeurs possibles prise par l'indice CAC40 à horizon 1 mois, 2 mois, 6 mois
+On souhaite utiliser l'intervalle de confiance obtenu pour nos aider à déterminer un scénario économique possible sur les actionS.
+Vue que l'on est dans le cadre de stress tests on cherche à déterminser un choc absolue plausible et non pas obtenir la valueur du CAC à horizon.
+
+```{r echo=FALSE, fig.height=5, fig.width=15}
+#help("forecast")
+par(mfrow=c(1,2))
+#forecasts_1998_d <- forecast(arima_1998_d, h = 60)
+#plot(forecasts_1998_d)
+
+#forecasts_2008_d <- forecast(arima_2008_d, h = 60)
+#plot(forecasts_2008_d)
+
+forecasts_2014_d <- forecast(arima_2014_d, h = 60)
+plot(forecasts_2014_d)
+
+#forecasts_2008_m <- forecast(arima_2008_m, h = 2)
+#plot(forecasts_2008_m)
+
+forecasts_2014_m <- forecast(arima_2014_m, h = 2)
+plot(forecasts_2014_m)
+
+```
+
+Les erreurs de prédictions obtenues semble suivre une normale centré et de variance assez constante.
+Le modèle ARIMA semble être adpaté pour la prédiction.
+
+The forecast errors seem to be normally distributed with mean zero and constant variance, the ARIMA model does seem to provide an adequate predictive model
+Here we looked at how to best fit ARIMA model to univariate time series.
+Next thing that I'll work on is Multivariate Time Series Forecasting using neural net.
+
+Cependant on remarque que la
+
+\pagebreak
+
+## Alternative au modèle de type ARIMA, les modèles GARCH
+Ces modèles prenne en compte l'hétérocédasticité.
+Ils sont mieux adapotés aux séries financières.
+
+Les séries financières comme ont a pu le voir, ne sont pas stationaire. Et on observe une tendance locale B1 p227.
+
+Comme ont la fait dans le caxs de la modélisation ARIMA on transforme la série originelle par différentiation.
+Pour obtenir une série stationnaire. 
+Ici on va considérer comme c'est souvent le cas en finance le log-return. C'est à dire la quantité déduite du prix $X_t$ de la manière suivante :
+Log-return $R_t$ des prix $X_t$ où $R_t=Log(X_t/X_{t-1})$.
+Cette appproche est bien adaptée au cadre de la théorie de Black-Scholes.
+On pourra se reporter au Document D3 page 
+
+D'après D3 page 96 :
+Au regard de l’autocorrélogramme partiel du log return, une modélisation à l’aide d’un modèle GARCH(1, 1) semblerait possible. 
+En effet, l’autocorrélogramme et l’autocorrélogramme partiel sont significativement nuls à partir des premiers retards (i.e. p = q = 1)
+Dans notre cas vu que l'indice et la période diffère.
+
+* Obtention de la série des log return
+
+```{r warning=FALSE}
+cac40 <- diff(log(tsCAC40_2014_Open_d))
+```
+
+* Graphique de la série obtenue
+
+```{r echo=FALSE}
+plot(cac40,col='blue',main='Log Rendement du CAC 40 de 2014 à 2020',xlab='Temps',ylab='Rendement')
+```
+
+```{r echo=FALSE, warning=FALSE}
+
+```
+
+
+```{r echo=FALSE, fig.height=12, fig.width=12, warning=FALSE}
+par(mfrow=c(2,1))
+acf(cac40)
+pacf(cac40)
+```
+
+
+```{r}
+
+```
+
+
+
+```{r echo=FALSE, warning=FALSE}
+cac.garch <- garch(cac40)  # Fit a GARCH(1,1) to cac returns
+```
+
+
+```{r}
+summary(cac.garch)  
+```
+
+### Graphique des résidus
+
+```{r echo=FALSE, warning=FALSE}
+
+plot(cac.garch$residuals, col="blue") 
+
+```
+
+Les résidus obtenus sont plus conforme à un bruit blanc.
+
+### Prévision obtenus à partir du modèle GARCH(1,1)
+
+```{r warning=FALSE}
+
+
+```
+
+```{r warning=FALSE}
+
+
+```
+
+
+## Références
+
+Books :
+
+* (B1) Statistics of finantial Markets (J. Franke, W.K. Härdle, C. M. Hafner)
+* (B2) Series-Temporelles-avec-R-methodes et cas (Y. Aragon)
+
+Documents:
+
+* (D1) Modèles GARCH et à volatilité stochastique (Christian. Francq)
+* (D2) Time Series Analysis with ARIMA – ARCH/GARCH model in R (L-Stern Group - Ly Pham)
+* (D3) Séries Temporelles et test d'adéquation d'un modèle GARCH(1,1) (Y. Djabrane)
+* (D4) Rapport ISFA - Les Momentums et leur application dans le cadre des marchés boursiers (M. Adil Rahimi)
+
+Blog/Internet: 
+
+* (I1) https://tradingninja.com/2017/03/sp-500-exponential-garch-volatility-model-using-r/
+* (I2) https://tradingninja.com/2016/01/financial-time-series-modelling-using-arima-plus-garch-models/
+
+
