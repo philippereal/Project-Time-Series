@@ -1,11 +1,16 @@
 ---
 title: "Rapport - Séries Temporelles"
+btitle: "A demonstration of Rmarkdown using Herman Bumpus' data"
 author: "Philippe Real"
-date: "12/01/2020"
+date: '`r format(Sys.time(), " %d %B, %Y")`'
+abstract: "This is my abstract."
+keywords: "Time series, ARIMA"
 output:
   pdf_document:
     toc: yes
     toc_depth: 3
+    fig_caption: yes
+    keep_tex: yes
     number_sections: true
   word_document:
     toc: yes
@@ -92,7 +97,7 @@ On va s'intéresser à la valeur à la fermeture pour la cotation de l'indice CA
 
 ```{r echo=FALSE}
 #par(mfrow=c(2,2))
-plot(Traffic_SNCF, xlab="Années",ylab="Nombre de voyageurs",main="Traffic sncf - 1963 à 1980")
+plot(Traffic_SNCF, xlab="Années",ylab="Nombre de voyageurs",main="Traffic sncf - 1963 à 1980",col='darkgreen',lwd=1)
 ```
 
 
@@ -179,10 +184,8 @@ lines(as.ts(MatX[,i]),col=i)
 ```
 Dans notre cas la méthode de la bande indiquerait un modèle additif à partir de l'année 1968. La méthode du profil plaide aussi plutôt pour un modèle additif. 
 
-On va donc utiliser un modèle additif, c'est à dire que l'on va décomposer la série sous la forme $X_t = m_t + s_t + z_t$ avec :
-* $m_t$ : La tendance (orientation à long terme)
-* $s_t$ : La saisonnalité (phénomène, composante périodique ou saisonnière)
-* $z_t$ : L'erreur ou résidu, dont la variation doit être faible par rapport aux 2 autres.
+On va donc utiliser un modèle additif, c'est à dire que l'on va décomposer la série sous la forme $X_t = m_t + s_t + z_t$ avec 
+$m_t$ : La tendance (orientation à long terme), $s_t$ : La saisonnalité (phénomène, composante périodique ou saisonnière) et $z_t$ : L'erreur ou résidu, dont la variation doit être faible par rapport aux 2 autres.
 
 ```{r echo=FALSE, fig.height=8, fig.width=14}
 par(mfrow=c(2,2))
@@ -198,6 +201,7 @@ plot(as.ts(rep(seasonal_sncf,12)), main="Série sans la saisonnalité")
 random_sncf = Traffic_SNCF - trend_sncf - seasonal_sncf
 plot(as.ts(random_sncf), main="Le bruit restant")
 ```
+\pagebreak
 
 * Decomposition des séries temporelles avec la fonction *decompose* de R
 
@@ -206,7 +210,6 @@ On va décomposer la série temporelles en utilisant la fonction décompose de R
 ```{r echo=FALSE}
 decompose_sncf <- decompose(Traffic_SNCF)
 plot(decompose_sncf)#, col = "red")
-
 ```
 
 La tendance est nette, on a aussi une saisonnalité qui semble marquée. Par contre le bruit présente une structure.
@@ -264,11 +267,11 @@ fitLES <-ets(Traffic_SNCF.6379,model="ANN")
 
 On peut comparer ces méthodes de lissage, en terme de critères AIC, AICc et BIC à partir du tableau suivant :
 
- Type de lissage Exponentiel |       AIC      |      AICc   |      BIC   | 
----------------------------- | -------------- | ----------- | ---------- |  
-Lissage Simple (A,N,N)       | `r fitLES$aic` | fitLES$aicc | fitLES$bic | 
-Lissage Double (A,A,N)       | `r fitLED$aic` | fitLED$aicc | fitLED$bic | 
-Holt-Winters   (A,A,A)       | `r fitHW$aic`  | fitHW$aicc  | fitHW$bic  | 
+ Type de lissage Exponentiel |       AIC      |        AICc     |       BIC      | 
+---------------------------- | -------------- | --------------- | -------------- |  
+Lissage Simple (A,N,N)       | `r fitLES$aic` | `r fitLES$aicc` | `r fitLES$bic` | 
+Lissage Double (A,A,N)       | `r fitLED$aic` | `r fitLED$aicc` | `r fitLED$bic` | 
+Holt-Winters   (A,A,A)       | `r fitHW$aic`  | `r fitHW$aicc`  | `r fitHW$bic`  | 
 
 Nous remarquons que le modele est trop basique dans notre cas pour predire a l'horizon 12 et que l'intervalle de confiance a 80%, bien que tres large, ne contient pas toutes les vraies valeurs de la serie. On peut utilser predict(fitLES,12) prediction a horizon 1 an.
 
@@ -283,15 +286,13 @@ fitMAA <- ets(Traffic_SNCF.6379,model="MAA")
 fitMAM <- ets(Traffic_SNCF.6379,model="MAM")
 ```
 
-Modèle   |       AIC      |      AICc   |      BIC   | 
--------- | -------------- | ----------- | ---------- |  
-(M,A,A)  | `r fitMAA$aic` | fitMAA$aicc | fitMAA$bic | 
-(M,A,M)  | `r fitMAM$aic` | fitMAM$aicc | fitMAM$bic | 
+Modèle   |       AIC      |        AICc     |        BIC     | 
+-------- | -------------- | --------------- | -------------- |  
+(M,A,A)  | `r fitMAA$aic` | `r fitMAA$aicc` | `r fitMAA$bic` | 
+(M,A,M)  | `r fitMAM$aic` | `r fitMAM$aicc` | `r fitMAM$bic` | 
 
-
-
-```{r echo=FALSE, fig.width=15}
-par(mfrow=c(2,2))
+```{r echo=FALSE, fig.height=5, fig.width=14}
+par(mfrow=c(1,2))
 predLES = forecast(fitLES,h=12)
 plot(predLES)
 points(Traffic_SNCF,type='l',col='darkgreen',lwd=1)
@@ -301,7 +302,10 @@ predLED <- forecast(fitLED,h=12)
 plot(predLED)
 points(Traffic_SNCF,type='l',col='darkgreen',lwd=1)
 legend('top',c("Valeurs observees","Predictions"),col=c("darkgreen","blue"),lty=rep(1,2),lwd = rep(2,2))
+```
 
+```{r echo=FALSE, fig.height=5, fig.width=14}
+par(mfrow=c(1,2))
 predHW <- forecast(fitHW,h=12)
 plot(predHW)
 points(Traffic_SNCF,type='l',col='darkgreen',lwd=1)
@@ -314,8 +318,7 @@ legend('top',c("Valeurs observees","Predictions"),col=c("darkgreen","blue"),lty=
 
 ```
 
-
-### Procédure automatique - modèles ajustés par ets.
+* Procédure automatique - modèles ajustés par ets.
 
 La fonction ets permet aussi un ajustement automatique du modéle, lorsqu'aucun modèle n'est spécifié. 
 ```{r echo=FALSE}
@@ -328,15 +331,13 @@ fit.ets <- ets(Traffic_SNCF.6379)
 
 Le modèle sélectionné est le modèle avec tendance additive et avec erreur et saisonnalité multiplicatives (M,A,M). C'est aussi ce modèle qui minimise le critère AIC, AICc et BIC. En effet, en spécifiant le critère à minimiser: AIC, AICc et BIC avec le paramètre ic="aic"/"aicc" ou bic" de la fonction ets, on obtient toujours le même modèle.
 
-       AIC      |      AICc    |      BIC    | 
---------------- | ------------ | ----------- |  
-`r fit.ets$aic` | fit.ets$aicc | fit.ets$bic | 
+Modèle   |        AIC      |        AICc      |        BIC      | 
+-------- | --------------- | ---------------- | --------------- |  
+(M,A,M)  | `r fit.ets$aic` | `r fit.ets$aicc` | `r fit.ets$bic` | 
 
-
-### Prédiction à partir du modèle de lissage exponentiel obtenu : (M,A,M)
-```{r echo=FALSE}
+```{r echo=FALSE, fig.height=5, fig.width=8}
 predfit.ets <- forecast(fit.ets,h=12)
-plot(predfit.ets)
+plot(predfit.ets, main=" Prédiction à partir du modèle de lissage exponentiel obtenu : (M,A,M)")
 points(Traffic_SNCF.6379,type='l',col='darkgreen',lwd=1)
 legend('top',c("Valeurs observées","Prédictions"),col=c("darkgreen","blue"),lty=rep(1,2),lwd = rep(2,2))
 ```
@@ -348,37 +349,25 @@ On obtiendra alors une modélisation à partir de processus ARIMA (p,d,q) ou SAR
 
 ### Identification du modèle
 La première étape est l'étude de la stationnarité du processus régissant la série. 
-Pour identifier le modèle on commence par une étude de la stationarité en traçant le corrélogramme de la série.
+Pour identifier le modèle on commence par une étude de la stationarité en traçant le corrélogramme de la série, la valeur de $\rho_X(h)$ en fonction de h. On va voir que l'on observe une périodicité annuelle, lorsque h = 12 dans le cas ici de données mensuelles. Pour mettre en évidence ce phénomène, on trace le corrélogramme de la série et de la série différentiée.
 
-la valeur de $\rho_X(h)$ varie, mais est positive et (presque) maximale en correspondance avec certaines valeurs de h. 
-Si par exemple on observe une périodicité annuelle, lorsque h = 12 dans le cas des données mensuelles, alors qu'elle est plus faible ou négative pour les autres valeurs de h. Cela signie que les valeurs d'un instant donnée ou de la période de l'année sont fortement corrélées à celles des mêmes instants ou pèriodes des années précédentes, de sorte que le phénomène varie au cours de chaque année et de manière similaire d'une année à l'autre.
-
-\pagebreak
-
-* Corrélogramme de  $X_t$ et de $(1-B)X_t$
+* Corrélogramme de $X_t$ et de $(1-B)X_t$
 
 ```{r echo=FALSE, fig.height=4, fig.width=15}
 par(mfrow=c(1,2))
 #acf(Traffic_SNCF.6379,type ="covariance",lag.max=60)
 acf(Traffic_SNCF.6379,type ="correlation",lag.max=60)
 acf(diff(Traffic_SNCF.6379,difference=1), lag.max=60) 
-
 ```
 
-La fonction d'autocorrélation estimée est positive. On remarque une périodicité de 1 (12 mois) (graphique de gauche).  
-On peut essayer de différentier la série au moins une fois (graphique de droite).
-On remarque des autocorrélations importantes pour les valeurs de h de 1 période (année), tout les 12 mois.
-C'est aussi ce que l'on avait remarqué précedemment avec le lag plot.
+La fonction d'autocorrélation estimée est positive. On remarque une périodicité de 1 (12 mois) (graphique de gauche).On peut essayer de différentier la série au moins une fois (graphique de droite). On remarque des autocorrélations importantes pour les valeurs de h de 1 période (année), tout les 12 mois. C'est aussi ce que l'on avait remarqué précedemment avec le lag plot.
+On va donc appliquer l'opérateur $(1-B^{12})$ à la série précédente, transformée par diffrentiation :  $(1-B)X_t$. Et lon trace le corrélogramme associé.
 
-On va donc appliquer l'opérateur $(1-B^{12})$ à la série précédente, transformée par diffrentiation :  $(1-B)X_t)$
-
-* Corrélogramme de $(1-B^{12})$
-
-```{r echo=FALSE, fig.height=5, fig.width=10}
+```{r echo=FALSE, fig.height=4, fig.width=8}
 #par(mfrow=c(1,2))
 acf(diff(Traffic_SNCF.6379,lag=12,difference=1), lag.max=180) 
 ```
-Le corrélogramme de la série obtenue par différentiation: $(1-B)(1-B^{12})X_t)$ ne présente plus de fortes amplitudes pour les petites valeurs de h.
+Le corrélogramme de la série obtenue par différentiation: $(1-B)(1-B^{12})X_t$ ne présente plus de fortes amplitudes pour les petites valeurs de h.
 Ni pour h multiple de 12 comme c'était le cas pour la série brute.
 On peut considérer que la série ainsi transformé est issue d'un processus stationnaire.
 Il y a encore cependant encore d'assez fortes valeurs pour $\hat{\rho}(1)$ ce qui indique d'ajouter un terme dans la partie MA du modèle.
@@ -396,7 +385,6 @@ On obtient ainsi un modèle du type SARIMA(0,1,1)(0,1,1)
 
 $(1-B)(1-B^{12})X_t = (1-\theta_1 B)(1-\theta_2 B^{12})\epsilon_t)$ où $E\epsilon_t=0$ et $V\epsilon_t=\sigma^2$
 
-
 * Elimination de la tendance
 
 ```{r echo=FALSE, fig.height=5, fig.width=15}
@@ -409,11 +397,13 @@ trend.diff_sncf<-diff(diff(Traffic_SNCF.6379,lag=12,difference=1),lag=1,differen
 plot(trend.diff_sncf,col="blue",main="Avec élimination de la tendance")
 ```
 
+\pagebreak
+
 * Validation du modèle obtenu par différentiation saisonnière
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 tdf1<-adf.test(diff(Traffic_SNCF.6379,lag=12,difference=1))
-tdf2<-adf.test(diff(diff(Traffic_SNCF.6379,lag=12,difference=1),lag=1,difference=1))
+#tdf2<-adf.test(diff(diff(Traffic_SNCF.6379,lag=12,difference=1),lag=1,difference=1))
 ```
 On confirme cette hypothèse à l'aide d'un test de $Dickey-Fuller$ on obtient une p_value=`r tdf1$p.value`
 On a donc réussit à amélioré la staionnarité de la série avec une différentiantion saisonnière. 
@@ -504,8 +494,6 @@ Avant de paser à la prédiction, on va maintenant valider ou invalider les mod�
 
 * Test de Box-Pierce 
 
-Le test de blancheur des résidus rejette nettement les modèles SARIMA(0,1,1)(0,1,1) et SARIMA(2,1,1)(1,1,1) avec une p-value de l'ordre de `r b011_011$p.value` Donc H0 est accepté <=> toutes les autocorrélation sont nulles.
-
 ```{r echo=FALSE}
 b112_011<-Box.test(s112_011$residuals,lag=20)
 b211_011<-Box.test(s211_011$residuals,lag=20)
@@ -513,8 +501,8 @@ b111_111<-Box.test(s111_111$residuals,lag=20)
 b011_011<-Box.test(s011_011$residuals,lag=20)
 
 ```
-
-Pour les 2 autres modèles on obtient comme p-value :  `r b111_111$p.value` pour le modèle SARIMA(1,1,1)(1,1,1)  et `r b011_011$p.value` pour le modèle SARIMA(0,1,1)(0,1,1) 
+Le test de blancheur des résidus rejette nettement le modèles SARIMA(0,1,1)(0,1,1) avec une p-value < 2.2e-16.
+Pour les autres 3 modèles SARIMA(2,1,1)(0,1,1), SARIMA(1,1,2)(0,1,1) et SARIMA(1,1,1)(1,1,1) on accepte la blancheur des résidus comme le montre le tableau ci-dessous.
 
 SARIMA   |      p-value         |   
 -------  | -------------------- | 
@@ -540,25 +528,40 @@ pacf(s112_011$residuals,lag=120)
 plot(s112_011$residuals, col="blue", main="Résidus SARIMA(0,1,1)(0,1,1)")
 ```
 
+* Statistiques 
 
+SARIMA(1,1,2)(0,1,1) :
 ```{r echo=FALSE}
 t_stat(s211_011)
+```
+SARIMA(1,1,2)(0,1,1) :
+```{r echo=FALSE}
 t_stat(s112_011)
+```
+SARIMA(1,1,1)(1,1,1) :
+```{r echo=FALSE}
 t_stat(s111_111)
-t_stat(s011_011)
 ```
 
+* Corrélations
+
+SARIMA(2,1,1)(1,1,1) :
 ```{r echo=FALSE}
 cor.arma(s211_011)
-cor.arma(s112_011)
-cor.arma(s111_111)
-cor.arma(s011_011)
 ```
-
+SARIMA(1,1,2)(0,1,1) :
+```{r echo=FALSE}
+cor.arma(s112_011)
+```
+SARIMA(1,1,1)(1,1,1) :
+```{r echo=FALSE}
+cor.arma(s111_111)
+```
 
 ```{r echo=FALSE}
 
 ```
+
 
 ## Modélisation automatique avec R
 
@@ -584,7 +587,7 @@ bt<-Box.test(autoarima111_011$residuals,lag=20)
 
 Le test de blancheur des résidus ou test Box-Pierce est accepté avec la p-value :  `r bt$p.value`
 
-```{r echo=FALSE, fig.height=4, fig.width=15}
+```{r echo=FALSE, fig.height=5, fig.width=15}
 par(mfrow=c(1,3))
 acf(autoarima111_011$residuals,lag=120)
 pacf(autoarima111_011$residuals,lag=120)
@@ -606,10 +609,18 @@ predSARIMA_211_011=forecast(s211_011,12)
 
 ```
 
+* Prédictions SARIMA(1,1,1)(0,1,1)
+
 ```{r echo=FALSE}
 predauto_111_011
-predSARIMA_111_111
 ```
+
+```{r echo=FALSE}
+# Prédictions SARIMA(1,1,2)(0,1,1)
+#predSARIMA_112_011
+```
+
+* Comparaison entre les différents modèles SARIMA
 
 ```{r echo=FALSE}
 
@@ -619,14 +630,16 @@ points(predSARIMA_112_011$mean,col="blue",lwd=1,type='l',lty=2)
 points(predSARIMA_211_011$mean,col="black",lwd=1,type='l',lty=3)
 points(predauto_111_011$mean,col="red",lwd=1,type='l',lty=4)
 
-legend("topleft",c("Vraies valeurs","SARIMA_011-111",
-                   "SARIMA_112-011", "SARIMA_211-011","SARIMA_111-011","SARIMA_111-011"),col=c("darkgreen","yellow","blue","black","red")
-       ,lty=c(2,1,2,3,4),lwd=1,cex=0.7)
-
-
+legend("topleft",
+       c("Vraies valeurs","SARIMA_011-111", "SARIMA_112-011", "SARIMA_211-011","SARIMA_111-011","SARIMA_111-011"),
+       col=c("darkgreen", "yellow","blue","black","red"),
+       lty=c(2,1,2,3,4),lwd=1,cex=0.7)
 ```
 
-* Comparaison entre SARIMA et lissage exponentiel
+Les modèles sont quasiment confondus, excepté le SARIMA(0,1,1)(1,1,1) qui est très légèrement décalé.
+Ils suivent plutôt bien la courbe des données des vraies valeurs.
+
+* Comparaison entre SARIMA(1,1,1)(0,1,1) et lissage exponentiel
 
 ```{r echo=FALSE}
 fitHW=ets(Traffic_SNCF.6379,model="MMM")
@@ -638,7 +651,7 @@ par(mfrow=c(1,2))
 plot(Traffic_SNCF,col="darkgreen",lwd=1,ylab="Nombre de Passagers",xlab="Temps", xlim=c(1962,1982),ylim=range(c(Traffic_SNCF,predauto_111_011$lower,predauto_111_011$upper,predHW$lower,predHW$upper)))
 points(predauto_111_011$mean,col="red",lwd=2,type='l')
 
-plot(Traffic_SNCF,col="darkgreen",lwd=1,ylab="Nombre de Passagers",xlab="Temps", xlim=c(1979,1981),ylim=range(c(Traffic_SNCF,predSARIMA$lower,predSARIMA$upper,predHW$lower,predHW$upper)))
+plot(Traffic_SNCF,col="darkgreen",lwd=1,ylab="Nombre de Passagers",xlab="Temps", xlim=c(1979,1981),ylim=range(c(Traffic_SNCF,predauto_111_011$lower,predauto_111_011$upper,predHW$lower,predHW$upper)))
 points(predauto_111_011$mean,col="red",lwd=2,type='l')
 points(predauto_111_011$lower[,2],col="red",type='l',lty=2)
 points(predauto_111_011$upper[,2],col="red",type='l',lty=2)
