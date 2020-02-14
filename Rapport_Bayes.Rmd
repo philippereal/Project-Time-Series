@@ -1,0 +1,358 @@
+---
+title: "Rapport - Statistique bayesienne"
+btitle: ""
+author: "Philippe Real"
+date: '`r format(Sys.time(), " %d %B, %Y")`'
+abstract:
+keywords: "R"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+    fig_caption: yes
+    keep_tex: yes
+    number_sections: true
+  word_document:
+    toc: yes
+  html_document:
+    df_print: paged
+    toc: yes
+---
+
+```{r install.librairies, eval=FALSE, include=FALSE}
+# install.packages("evd")
+# install.packages("evir")
+# install.packages("ismev")
+# install.packages("fExtremes")
+# install.packages("extRemes")
+# install.packages("fitdistrplus")
+# install.packages("chron")
+# install.packages("lubridate")
+# library(forecast)
+# install.packages("fGarch")
+# install.packages("caschrono")
+# install.packages("FinTS")
+# install.packages("xts")
+# install.packages("zoo")
+# install.packages("tidyverse")
+# install.packages("dyplr")
+
+```
+
+```{r librairies, echo=FALSE, message=FALSE, warning=FALSE}
+rm(list=ls())
+library(stats)
+library(tidyverse)
+#library(dyplr)
+
+density.plot=function(x,position="topleft",legende=FALSE,...)
+{
+ H<-hist(x,sub=NULL,ylab="densité",freq=FALSE, ...)
+ abline(v=0,lwd=2)
+ rug(x,ticksize=0.01)
+ xmin=par()$usr[1];xmax=par()$usr[2]
+ tab<-seq(xmin,xmax,0.002)
+ lines(tab,dnorm(tab,mean(x),sd(x)),col="red",lty=2,lwd=2)
+ lines(density(x),lwd=2,col="orange")
+ if(legende)
+ lg0=c("estimation n.p. de la densité","estimation d'une gaussienne")
+ legend(position,legend=,lg0,lty=c(1,2),lwd=2, col=c("orange","red"),cex=0.9) 
+}
+
+var.marg.est<-function(mod){
+ param.estim=mod@fit$par
+ std.estim=mod@fit$se.coef
+ k<-which(names(param.estim)=="omega")
+ value=param.estim[k]/(1-sum(param.estim[(k+1):length(param.estim)]))
+ cat("variance marginale : ",value,"\n")
+ }
+
+```
+
+
+\pagebreak
+
+# Introduction
+
+
+## Lecture des données - description statistique
+
+```{r echo=FALSE, fig.height=5, fig.width=15, message=FALSE, warning=FALSE}
+dataMutations_d <-read.table("mutations.csv", sep=",", dec=".",header=T, na.strings = "null")
+dataMutations_d<- mutate(dataMutations_d, dept = as.factor( substr(as.character(commune),1,2)))
+
+```
+
+
+```{r echo=FALSE}
+summary(dataMutations_d)
+```
+
+```{r echo=FALSE}
+head(dataMutations_d)
+```
+
+
+```{r echo=FALSE}
+
+```
+
+# Régression linéaire
+
+On propose d'abord un modèle linéaire gaussien. On cherche à expliquer le nombre de points nécessaire à une mutation (colonne Barre) par les caractéristiques du lycée.
+
+## Régression linéaire bayésienne et interprétation les coéfficients obtenus
+
+
+caractéristiques du lycée
+
+code_etablissement
+etablissement
+ville
+commune
+
+
+
+
+```{r echo=FALSE}
+
+y = dataMutations_d[,"Barre"]
+data.lyc<-cbind( as.character(dataMutations_d[,"Matiere"]),
+         as.character(dataMutations_d[,"etablissement"]),
+         as.character(dataMutations_d[,"ville"]),
+         as.character(dataMutations_d[,"commune"]),
+         as.character(dataMutations_d[,"dept"]),
+         as.numeric(dataMutations_d[,"Barre"])
+         )
+
+colnames(data.lyc) <- c("Matiere", "etablissement","ville","commune","dept","Barre")
+
+data.lyc<-as.data.frame(data.lyc)
+
+data.lyc[,1] <- as.factor(data.lyc[,1])
+data.lyc[,2] <- as.factor(data.lyc[,2])
+data.lyc[,3] <- as.factor(data.lyc[,3])
+data.lyc[,4] <- as.factor(data.lyc[,4])
+data.lyc[,5] <- as.factor(data.lyc[,5])
+data.lyc[,6] <- as.numeric(data.lyc[,6])
+
+data.lyc<-as.data.frame(data.lyc)
+head(data.lyc)
+     
+```
+
+
+```{r echo=FALSE}
+reg.f1 = lm(Barre ~ dept + ville , data=data.lyc)
+summary(reg.f1)
+```
+
+```{r echo=FALSE}
+reg.f1 = lm(Barre ~ . -code_etablissement -etablissement -Matiere -ville, data=dataMutations_d)
+summary(reg.f1)
+```
+
+
+```{r echo=FALSE}
+
+betahat = reg.f1$coefficients
+residuals = reg.f1$residuals
+s2 = t(residuals)%*%residuals
+
+```
+
+```{r echo=FALSE}
+
+```
+
+
+```{r echo=FALSE}
+y = data[, 17]
+X = as.matrix(data[, 2:16])
+n = length(y)
+
+#Q1
+reg.f = lm(y~X)
+summary(reg.f)
+betahat = reg.f$coefficients
+residuals = reg.f$residuals
+s2 = t(residuals)%*%residuals
+
+X = cbind(1, X) # on ajoute une colonne de 1 pour beta_0
+```
+
+
+
+```{r echo=FALSE}
+
+```
+
+```{r echo=FALSE}
+
+```
+
+## Choix des covariables et comparaison au résultat obtenu par une analyse fréquentiste.
+
+Choisir les covariables significatives. 
+Comparer au résultat obtenu par une analyse fréquentiste.
+Afin de réduire le coût computationnel, il peut être intéressant d'éffectuer une présélection des covariables considérées.
+
+### Choix des covariables
+
+```{r echo=FALSE}
+
+```
+
+
+```{r echo=FALSE}
+
+```
+
+### Comparaison au résultat obtenu par une analyse fréquentiste
+
+```{r echo=FALSE}
+
+```
+
+
+```{r echo=FALSE}
+
+```
+
+
+### Préselection des covariables
+
+```{r echo=FALSE}
+
+```
+
+
+
+# Loi de Pareto
+
+On ignore maintenant les covariables, et on s'intéresse uniquement à la loi du nombre de points nécessaire (colonne Barre). La loi gaussienne peut paraître peu pertinente pour ces données : on va plutôt proposer une loi de Pareto. Pour $m > 0$ et $\alpha > 0$, on dit que $Z  Pareto(m; \alpha)$ si $Z$ est à valeurs dans $[m;+1[$ de densité:
+
+```{r echo=FALSE}
+
+```
+
+## Package R pour générer des réalisation d'une loi de Paréto
+
+```{r echo=FALSE}
+
+```
+
+```{r echo=FALSE}
+#library(evd)
+#library(evir)
+#library(ismev)
+#library(fExtremes)
+
+library(extRemes)
+# install.packages("extRemes")
+```
+
+
+
+```{r GPD, echo=FALSE, fig.height=4, fig.width=15}
+par(mfrow=c(1,2))
+x <- seq(0,10, by =0.05)
+plot(x, devd(x, 1, 1, -0.5, 1, type="GP"), type="l", col="blue", lwd=1.5,ylab="GP df", main="Global Pareto distibutions - GPD")
+lines(x, devd(x, 1, 1, 0, 1, type="GP"), col="lightblue", lwd=1.5)
+lines(x, devd(x, 1, 1, 0.5, 1, type="GP"), col="darkblue", lwd=1.5)
+
+legend("topright", legend=c("Beta", "Exponential", "Pareto"),col=c("blue", "lightblue", "darkblue"), bty="n", lty=1, lwd=1.5)
+
+plot(x, devd(x, 1, 0.5, -0.5, 1, type="GP"), type="l", col="blue", lwd=1.5,
+ylab="GP df", main="Différents paramètres de dimensionnement")
+lines(x, devd(x, 1, 1, 0, 1, type="GP"), col="lightblue", lwd=1.5)
+lines(x, devd(x, 1, 2, 0.5, 1, type="GP"), col="darkblue", lwd=1.5)
+#lines(x, devd(x, 1, 3, 0.5, 1, type="GP"), col="darkblue", lwd=1.5)
+legend("topright", legend=c("Beta", "Exponential", "Pareto"),col=c("blue", "lightblue", "darkblue"), bty="n", lty=1, lwd=1.5)
+text(2,1.6,expression(a == -0.5))
+text(0.5,1,expression(a == 1))
+text(0.5,0.1,expression(a == 2))
+```
+
+
+
+```{r GPD, echo=FALSE, fig.height=4, fig.width=15}
+par(mfrow=c(1,2))
+x <- seq(0,10, by =0.05)
+plot(x, devd(x, 1,  1, 0.5, 1, type="GP"), type="l", col="blue", lwd=1.5,ylab="GP df", main="Global Pareto distibutions - GPD - pour différents alpha")
+lines(x, devd(x, 1, 1, 2, 1, type="GP"), col="lightblue", lwd=1.5)
+lines(x, devd(x, 1, 1, 5, 1, type="GP"), col="darkblue", lwd=1.5)
+
+
+legend("topright", legend=c("Pareto alpha=0.5", "Pareto alpha=2", "Pareto alpha=5"),col=c("blue", "lightblue", "darkblue"), bty="n", lty=1, lwd=1.5)
+
+plot(x, devd(x, 1, 0.5, 0.5, 1, type="GP"), type="l", col="blue", lwd=1.5,ylab="GP df", main="Différents paramètres de dimensionnement")
+lines(x, devd(x, 1, 1, 0.5, 1, type="GP"), col="lightblue", lwd=1.5)
+lines(x, devd(x, 1, 2, 0.5, 1, type="GP"), col="darkblue", lwd=1.5)
+legend("topright", legend=c("Pareto a=0.5", "Pareto a=1", "Pareto a=2"),col=c("blue", "lightblue", "darkblue"), bty="n", lty=1, lwd=1.5)
+text(2,1.6,expression(a == 0.5))
+text(0.5,1,expression(a == 1))
+text(0.5,0.1,expression(a == 2))
+```
+
+## Choix d'une loi à priori pour $\alpha$
+
+
+
+- Loi de paréto : $ $f(z\mid \alpha,m) = \alpha \frac{ m^\alpha}{z^{\alpha+1}}\mathbb{1_{[{m,+\infty}[}}$ 
+
+$f(z\mid \alpha,m) \propto \alpha e^{\alpha log(m/z)}$
+
+$\sim$
+
+A une constante multiplicative près et après transformation en log, on reconnaît une loi exponentielle de paramètre $\alpha$ 
+On peut prendre une loi a priori de type $gamma$ de manière à avoir une loi conjuguée.
+
+
+```{r echo=FALSE}
+
+```
+
+```{r echo=FALSE}
+
+```
+
+## Loi à postériori de $\alpha$
+
+```{r echo=FALSE}
+
+```
+
+```{r echo=FALSE}
+
+```
+
+## Echantillon de la loi à postériori de $\alpha$
+
+Par la méthode de votre choix, tirer un échantillon de la loi a posteriori de. 
+Donner un intervalle de crédibilité à 95%.
+
+```{r echo=FALSE}
+
+
+```
+
+
+```{r echo=FALSE}
+
+
+```
+
+## 8
+
+```{r echo=FALSE}
+
+
+```
+
+```{r echo=FALSE}
+
+
+```
+
+
